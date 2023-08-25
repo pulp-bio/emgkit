@@ -1,5 +1,4 @@
-"""This package contains the implementations of the pre-processing steps
-commonly used in EMG decomposition, such as filtering and whitening.
+"""This package contains the code to decompose and analyse EMG signals.
 
 
 Copyright 2023 Mattia Orlandi
@@ -17,8 +16,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from ._abc_whitening import WhiteningModel
-from ._extension import extend_signal
-from ._filtering import bandpass_filter, highpass_filter, lowpass_filter, notch_filter
-from ._pca_whitening import PCAWhitening, pca_whitening
-from ._zca_whitening import ZCAWhitening, zca_whitening
+from . import decomposition, plot, preprocessing, utils
+
+__all__ = [
+    "decomposition",
+    "plot",
+    "preprocessing",
+    "utils",
+]
