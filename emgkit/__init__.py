@@ -17,10 +17,3 @@ limitations under the License.
 """
 
 from . import decomposition, plot, preprocessing, utils
-
-__all__ = [
-    "decomposition",
-    "plot",
-    "preprocessing",
-    "utils",
-]
