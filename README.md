@@ -1,2 +1,2 @@
 # emgkit
-A toolkit for processing and visualization of EMG signals.
+A toolkit for the processing, analysis and visualization of EMG signals.
