@@ -20,27 +20,18 @@ from __future__ import annotations
 
 import numpy as np
 
-
-def _extend_signal(x: np.ndarray, f_ext: int) -> np.ndarray:
-    """Helper function for extending 2D signals."""
-    n_ch, n_samp = x.shape
-    n_ch_ext = f_ext * n_ch
-
-    x_ext = np.zeros(shape=(n_ch_ext, n_samp - f_ext + 1), dtype=x.dtype)
-    for i in range(f_ext):
-        x_ext[i * n_ch : (i + 1) * n_ch] = x[:, f_ext - i - 1 : n_samp - i]
-    return x_ext
+from .._base import Signal, signal_to_array
 
 
-def extend_signal(x: np.ndarray, f_ext: int = 1) -> np.ndarray:
+def extend_signal(x: Signal, f_ext: int = 1) -> np.ndarray:
     """Extend signal with delayed replicas by a given extension factor.
 
     Parameters
     ----------
-    x : ndarray
-        Signal with shape:
+    x : Signal
+        A signal with shape:
         - (n_samples,);
-        - (n_channels, n_samples).
+        - (n_samples, n_channels).
     f_ext : int, default=1
         Extension factor.
 
@@ -48,14 +39,22 @@ def extend_signal(x: np.ndarray, f_ext: int = 1) -> np.ndarray:
     -------
     ndarray
         Extended signal with shape (f_ext * n_channels, n_samples).
-    """
-    if len(x.shape) == 1:
-        x = x.reshape((1, 1, -1))
 
-    n_ch, n_samp = x.shape
+    Raises
+    ------
+    TypeError
+        If the input is neither an array, a DataFrame/Series nor a Tensor.
+    ValueError
+        If the input is neither 2D nor 1D.
+    """
+
+    # Convert input to array
+    x_a = signal_to_array(x)
+
+    n_samp, n_ch = x_a.shape
     n_ch_ext = f_ext * n_ch
 
-    x_ext = np.zeros(shape=(n_ch_ext, n_samp), dtype=x.dtype)
+    x_ext = np.zeros(shape=(n_samp, n_ch_ext), dtype=x_a.dtype)
     for i in range(f_ext):
-        x_ext[i * n_ch : (i + 1) * n_ch, i:] = x[:, : n_samp - i]
+        x_ext[i:, i * n_ch : (i + 1) * n_ch] = x[: n_samp - i]
     return x_ext

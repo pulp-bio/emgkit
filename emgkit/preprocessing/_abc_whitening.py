@@ -20,8 +20,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-import numpy as np
 import torch
+
+from .._base import Signal
 
 
 class WhiteningModel(ABC):
@@ -38,46 +39,67 @@ class WhiteningModel(ABC):
         """Tensor or None: Property for getting the estimated whitening matrix."""
 
     @abstractmethod
-    def fit(self, x: np.ndarray | torch.Tensor) -> WhiteningModel:
+    def fit(self, x: Signal) -> WhiteningModel:
         """Fit the whitening model on the given signal.
 
         Parameters
         ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         WhiteningModel
             The fitted whitening model.
+
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame/Series nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
 
     @abstractmethod
-    def fit_transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
+    def fit_transform(self, x: Signal) -> torch.Tensor:
         """Fit the whitening model on the given signal and return the whitened signal.
 
         Parameters
         ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
-        ndarray or Tensor
-            Whitened signal with shape (n_channels, n_samples).
+        Tensor
+            Whitened signal with shape (n_samples, n_components).
+
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame/Series nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
 
     @abstractmethod
-    def transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
+    def transform(self, x: Signal) -> torch.Tensor:
         """Whiten the given signal using the fitted whitening model.
 
         Parameters
         ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
-        ndarray or Tensor
-            Whitened signal with shape (n_channels, n_samples).
+        Tensor
+            Whitened signal with shape (n_samples, n_components).
+
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame/Series nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """

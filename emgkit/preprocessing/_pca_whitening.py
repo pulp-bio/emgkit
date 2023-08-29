@@ -21,90 +21,16 @@ from __future__ import annotations
 import logging
 import warnings
 from math import sqrt
-from typing import overload
 
 import numpy as np
 import torch
 
+from .._base import Signal, signal_to_tensor
 from ._abc_whitening import WhiteningModel
 
 
-@overload
 def pca_whitening(
-    x: np.ndarray,
-    n_pcs: int = -1,
-    p_discard: float = 0,
-    var_th: float = 1,
-    solver: str = "svd",
-    device: torch.device | None = None,
-) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
-    """Function performing PCA whitening.
-
-    Parameters
-    ----------
-    x : ndarray
-        Signal with shape (n_channels, n_samples).
-    n_pcs : int, default=-1
-        Number of components to be selected (if zero or negative, all components will be retained)).
-    p_discard : float, default=0
-        Proportion of components to be discarded; relevant if n_pcs is not specified.
-    var_th : float, default=1
-        Cut-off threshold for the variances; relevant if n_pcs and p_discard are not specified.
-    solver : {"svd", "eigh"}, default="svd"
-        The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
-        Torch device.
-
-    Returns
-    -------
-    ndarray
-        Whitened signal with shape (n_components, n_samples).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated whitening matrix.
-    """
-
-
-@overload
-def pca_whitening(
-    x: torch.Tensor,
-    n_pcs: int = -1,
-    p_discard: float = 0,
-    var_th: float = 1,
-    solver: str = "svd",
-    device: torch.device | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Function performing PCA whitening.
-
-    Parameters
-    ----------
-    x : Tensor
-        Signal with shape (n_channels, n_samples).
-    n_pcs : int, default=-1
-        Number of components to be selected (if zero or negative, all components will be retained)).
-    p_discard : float, default=0
-        Proportion of components to be discarded; relevant if n_pcs is not specified.
-    var_th : float, default=1
-        Cut-off threshold for the variances; relevant if n_pcs and p_discard are not specified.
-    solver : {"svd", "eigh"}, default="svd"
-        The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
-        Torch device.
-
-    Returns
-    -------
-    Tensor
-        Whitened signal with shape (n_components, n_samples).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated whitening matrix.
-    """
-
-
-def pca_whitening(
-    x: np.ndarray | torch.Tensor,
+    x: Signal,
     n_pcs: int = -1,
     p_discard: float = 0,
     var_th: float = 1,
@@ -115,8 +41,8 @@ def pca_whitening(
 
     Parameters
     ----------
-    x : ndarray or Tensor
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     n_pcs : int, default=-1
         Number of components to be selected (if zero or negative, all components will be retained)).
     p_discard : float, default=0
@@ -130,12 +56,19 @@ def pca_whitening(
 
     Returns
     -------
-    ndarray or Tensor
-        Whitened signal with shape (n_components, n_samples).
+    Tensor
+        Whitened signal with shape (n_samples, n_components).
     Tensor
         Estimated mean vector.
     Tensor
         Estimated whitening matrix.
+
+    Raises
+    ------
+    TypeError
+        If the input is neither an array, a DataFrame nor a Tensor.
+    ValueError
+        If the input is not 2D.
     """
     whiten_model = PCAWhitening(n_pcs, p_discard, var_th, solver, device)
     x_w = whiten_model.fit_transform(x)
@@ -219,138 +152,89 @@ class PCAWhitening(WhiteningModel):
         """Tensor or None: Property for getting the vector of explained variance ratio."""
         return self._exp_var_ratio
 
-    def fit(self, x: np.ndarray | torch.Tensor) -> WhiteningModel:
+    def fit(self, x: Signal) -> WhiteningModel:
         """Fit the whitening model on the given signal.
 
         Parameters
         ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         WhiteningModel
             The fitted whitening model.
+
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
         self._fit_transform(x)
         return self
 
-    @overload
-    def fit_transform(self, x: np.ndarray) -> np.ndarray:
+    def fit_transform(self, x: Signal) -> torch.Tensor:
         """Fit the whitening model on the given signal and return the whitened signal.
 
         Parameters
         ----------
-        x : ndarray
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray
-            Whitened signal with shape (n_components, n_samples).
-        """
-
-    @overload
-    def fit_transform(self, x: torch.Tensor) -> torch.Tensor:
-        """Fit the whitening model on the given signal and return the whitened signal.
-
-        Parameters
-        ----------
-        x : Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         Tensor
-            Whitened signal with shape (n_components, n_samples).
-        """
+            Whitened signal with shape (n_samples, n_components).
 
-    def fit_transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
-        """Fit the whitening model on the given signal and return the whitened signal.
-
-        Parameters
-        ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray or Tensor
-            Whitened signal with shape (n_components, n_samples).
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
         return self._fit_transform(x)
 
-    @overload
-    def transform(self, x: np.ndarray) -> np.ndarray:
+    def transform(self, x: Signal) -> torch.Tensor:
         """Whiten the given signal using the fitted whitening model.
 
         Parameters
         ----------
-        x : ndarray
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray
-            Whitened signal with shape (n_components, n_samples).
-        """
-
-    @overload
-    def transform(self, x: torch.Tensor) -> torch.Tensor:
-        """Whiten the given signal using the fitted whitening model.
-
-        Parameters
-        ----------
-        x : Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         Tensor
-            Whitened signal with shape (n_components, n_samples).
-        """
+            Whitened signal with shape (n_samples, n_components).
 
-    def transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
-        """Whiten the given signal using the fitted whitening model.
-
-        Parameters
-        ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray or Tensor
-            Whitened signal with shape (n_components, n_samples).
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
         assert (
             self._mean_vec is not None and self._white_mtx is not None
         ), "Mean vector or whitening matrix are null, fit the model first."
 
-        is_numpy = isinstance(x, np.ndarray)
+        # Convert input to Tensor
+        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
 
-        x_t = torch.from_numpy(x).to(self._device) if is_numpy else x.to(self._device)
+        # Center and whiten signal
         x_t -= self._mean_vec
         x_w_t = self._white_mtx @ x_t
 
-        if is_numpy:
-            return x_w_t.cpu().numpy()
-        else:
-            return x_w_t
+        return x_w_t.T
 
-    @overload
-    def _fit_transform(self, x: np.ndarray) -> np.ndarray:
+    def _fit_transform(self, x: Signal) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
 
-    @overload
-    def _fit_transform(self, x: torch.Tensor) -> torch.Tensor:
-        """Helper method for fit and fit_transform."""
-
-    def _fit_transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
-        """Helper method for fit and fit_transform."""
-        is_numpy = isinstance(x, np.ndarray)
-
-        x_t = torch.from_numpy(x).to(self._device) if is_numpy else x.to(self._device)
+        # Convert input to Tensor
+        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
         n_ch, n_samp = x_t.size()
         self._mean_vec = x_t.mean(dim=1, keepdim=True)
         x_t -= self._mean_vec
@@ -412,7 +296,4 @@ class PCAWhitening(WhiteningModel):
         self._white_mtx = d_mtx @ e.T
         x_w_t = self._white_mtx @ x_t
 
-        if is_numpy:
-            return x_w_t.cpu().numpy()
-        else:
-            return x_w_t
+        return x_w_t.T

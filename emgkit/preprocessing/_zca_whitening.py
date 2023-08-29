@@ -21,45 +21,15 @@ from __future__ import annotations
 import logging
 import warnings
 from math import sqrt
-from typing import overload
 
-import numpy as np
 import torch
 
+from .._base import Signal, signal_to_tensor
 from ._abc_whitening import WhiteningModel
 
 
-@overload
 def zca_whitening(
-    x: np.ndarray,
-    solver: str = "svd",
-    device: torch.device | None = None,
-) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
-    """Function performing ZCA whitening.
-
-    Parameters
-    ----------
-    x : ndarray
-        Signal with shape (n_channels, n_samples).
-    solver : {"svd", "eigh"}, default="svd"
-        The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
-        Torch device.
-
-    Returns
-    -------
-    ndarray
-        Whitened signal with shape (n_channels, n_samples).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated whitening matrix.
-    """
-
-
-@overload
-def zca_whitening(
-    x: torch.Tensor,
+    x: Signal,
     solver: str = "svd",
     device: torch.device | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -67,8 +37,8 @@ def zca_whitening(
 
     Parameters
     ----------
-    x : Tensor
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
     device : device or None, default=None
@@ -77,38 +47,18 @@ def zca_whitening(
     Returns
     -------
     Tensor
-        Whitened signal with shape (n_channels, n_samples).
+        Whitened signal with shape (n_samples, n_components).
     Tensor
         Estimated mean vector.
     Tensor
         Estimated whitening matrix.
-    """
 
-
-def zca_whitening(
-    x: np.ndarray | torch.Tensor,
-    solver: str = "svd",
-    device: torch.device | None = None,
-) -> tuple[np.ndarray | torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Function performing ZCA whitening.
-
-    Parameters
-    ----------
-    x : ndarray or Tensor
-        Signal with shape (n_channels, n_samples).
-    solver : {"svd", "eigh"}, default="svd"
-        The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
-        Torch device.
-
-    Returns
-    -------
-    ndarray or Tensor
-        Whitened signal with shape (n_channels, n_samples).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated whitening matrix.
+    Raises
+    ------
+    TypeError
+        If the input is neither an array, a DataFrame nor a Tensor.
+    ValueError
+        If the input is not 2D.
     """
     whiten_model = ZCAWhitening(solver, device)
     x_w = whiten_model.fit_transform(x)
@@ -155,143 +105,91 @@ class ZCAWhitening(WhiteningModel):
         """Tensor or None: Property for getting the estimated whitening matrix."""
         return self._white_mtx
 
-    def fit(self, x: np.ndarray | torch.Tensor) -> WhiteningModel:
+    def fit(self, x: Signal) -> WhiteningModel:
         """Fit the whitening model on the given signal.
 
         Parameters
         ----------
-        x :  ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         WhiteningModel
             The fitted whitening model.
+
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
         # Fit the model and return self
         self._fit_transform(x)
         return self
 
-    @overload
-    def fit_transform(self, x: np.ndarray) -> np.ndarray:
+    def fit_transform(self, x: Signal) -> torch.Tensor:
         """Fit the whitening model on the given signal and return the whitened signal.
 
         Parameters
         ----------
-        x : ndarray
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray
-            Whitened signal with shape (n_components, n_samples).
-        """
-
-    @overload
-    def fit_transform(self, x: torch.Tensor) -> torch.Tensor:
-        """Fit the whitening model on the given signal and return the whitened signal.
-
-        Parameters
-        ----------
-        x : Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         Tensor
-            Whitened signal with shape (n_components, n_samples).
-        """
+            Whitened signal with shape (n_samples, n_components).
 
-    def fit_transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
-        """Fit the whitening model on the given signal and return the whitened signal.
-
-        Parameters
-        ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray or Tensor
-            Whitened signal with shape (n_channels, n_samples).
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
         # Fit the model and return result
         return self._fit_transform(x)
 
-    @overload
-    def transform(self, x: np.ndarray) -> np.ndarray:
+    def transform(self, x: Signal) -> torch.Tensor:
         """Whiten the given signal using the fitted whitening model.
 
         Parameters
         ----------
-        x : ndarray
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray
-            Whitened signal with shape (n_components, n_samples).
-        """
-
-    @overload
-    def transform(self, x: torch.Tensor) -> torch.Tensor:
-        """Whiten the given signal using the fitted whitening model.
-
-        Parameters
-        ----------
-        x : Tensor
-            Signal with shape (n_channels, n_samples).
+        x : Signal
+            A signal with shape (n_samples, n_channels).
 
         Returns
         -------
         Tensor
-            Whitened signal with shape (n_components, n_samples).
-        """
+            Whitened signal with shape (n_samples, n_components).
 
-    def transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
-        """Whiten the given signal using the fitted whitening model.
-
-        Parameters
-        ----------
-        x : ndarray or Tensor
-            Signal with shape (n_channels, n_samples).
-
-        Returns
-        -------
-        ndarray or Tensor
-            Whitened signal with shape (n_channels, n_samples).
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
         """
         assert (
             self._mean_vec is not None and self._white_mtx is not None
         ), "Mean vector or whitening matrix are null, fit the model first."
 
         # Convert input to Tensor
-        is_numpy = isinstance(x, np.ndarray)
-        x_t = torch.from_numpy(x).to(self._device) if is_numpy else x.to(self._device)
+        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
 
-        # Center signal
+        # Center and whiten signal
         x_t -= self._mean_vec
-        # Whiten signal
         x_w_t = self._white_mtx @ x_t
 
-        if is_numpy:
-            return x_w_t.cpu().numpy()
-        else:
-            return x_w_t
+        return x_w_t.T
 
-    @overload
-    def _fit_transform(self, x: np.ndarray) -> np.ndarray:
+    def _fit_transform(self, x: Signal) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
 
-    @overload
-    def _fit_transform(self, x: torch.Tensor) -> torch.Tensor:
-        """Helper method for fit and fit_transform."""
-
-    def _fit_transform(self, x: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
-        """Helper method for fit and fit_transform."""
-        is_numpy = isinstance(x, np.ndarray)
-
-        x_t = torch.from_numpy(x).to(self._device) if is_numpy else x.to(self._device)
+        # Convert input to Tensor
+        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
         n_samp = x_t.size(1)
         self._mean_vec = x_t.mean(dim=1, keepdim=True)
         x_t -= self._mean_vec
@@ -324,7 +222,4 @@ class ZCAWhitening(WhiteningModel):
         self._white_mtx = e @ d_mtx @ e.T
         x_w_t = self._white_mtx @ x_t
 
-        if is_numpy:
-            return x_w_t.cpu().numpy()
-        else:
-            return x_w_t
+        return x_w_t.T

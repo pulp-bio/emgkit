@@ -23,14 +23,16 @@ from typing import Sequence
 import numpy as np
 from scipy import signal
 
+from .._base import Signal, signal_to_array
 
-def lowpass_filter(x: np.ndarray, cut: float, fs: float, order: int = 5) -> np.ndarray:
+
+def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 5) -> np.ndarray:
     """Apply a Butterworth lowpass filter on the given signal.
 
     Parameters
     ----------
-    x : ndarray
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     cut : float
         Higher bound for frequency band.
     fs : float
@@ -41,20 +43,24 @@ def lowpass_filter(x: np.ndarray, cut: float, fs: float, order: int = 5) -> np.n
     Returns
     -------
     ndarray
-        Filtered signal with shape (n_channels, n_samples).
+        Filtered signal with shape (n_samples, n_channels).
     """
-    # Create filter
+
+    # Convert input to array
+    x_a = signal_to_array(x)
+
+    # Create and apply filter
     sos = signal.butter(order, cut, btype="low", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x).copy()
+    return signal.sosfiltfilt(sos, x_a, axis=0).copy()
 
 
-def highpass_filter(x: np.ndarray, cut: float, fs: float, order: int = 5) -> np.ndarray:
+def highpass_filter(x: Signal, cut: float, fs: float, order: int = 5) -> np.ndarray:
     """Apply a Butterworth highpass filter on the given signal.
 
     Parameters
     ----------
-    x : ndarray
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     cut : float
         Lower bound for frequency band.
     fs : float
@@ -65,15 +71,19 @@ def highpass_filter(x: np.ndarray, cut: float, fs: float, order: int = 5) -> np.
     Returns
     -------
     ndarray
-        Filtered signal with shape (n_channels, n_samples).
+        Filtered signal with shape (n_samples, n_channels).
     """
-    # Create filter
+
+    # Convert input to array
+    x_a = signal_to_array(x)
+
+    # Create and apply filter
     sos = signal.butter(order, cut, btype="high", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x).copy()
+    return signal.sosfiltfilt(sos, x_a, axis=0).copy()
 
 
 def bandpass_filter(
-    x: np.ndarray,
+    x: Signal,
     low_cut: float,
     high_cut: float,
     fs: float,
@@ -83,8 +93,8 @@ def bandpass_filter(
 
     Parameters
     ----------
-    x : ndarray
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     low_cut : float
         Lower bound for frequency band.
     high_cut : float
@@ -97,15 +107,19 @@ def bandpass_filter(
     Returns
     -------
     ndarray
-        Filtered signal with shape (n_channels, n_samples).
+        Filtered signal with shape (n_samples, n_channels).
     """
-    # Create filter
+
+    # Convert input to array
+    x_a = signal_to_array(x)
+
+    # Create and apply filter
     sos = signal.butter(order, (low_cut, high_cut), btype="band", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x).copy()
+    return signal.sosfiltfilt(sos, x_a, axis=0).copy()
 
 
 def notch_filter(
-    x: np.ndarray,
+    x: Signal,
     exclude_freqs: Sequence[float],
     fs: float,
     exclude_harmonics: bool = False,
@@ -116,8 +130,8 @@ def notch_filter(
 
     Parameters
     ----------
-    x : ndarray
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     exclude_freqs : sequence of floats
         Frequencies to exclude.
     fs : float
@@ -132,8 +146,11 @@ def notch_filter(
     Returns
     -------
     ndarray
-        Filtered signal with shape (n_channels, n_samples).
+        Filtered signal with shape (n_samples, n_channels).
     """
+
+    # Convert input to array
+    x_a = signal_to_array(x)
 
     def find_multiples(base: float, limit: float) -> list[float]:
         last_mult = int(round(limit / base))
@@ -152,6 +169,6 @@ def notch_filter(
     # Apply series of notch filters
     for freq in exclude_freqs_set:
         b, a = signal.iirnotch(freq, q, fs)
-        x = signal.filtfilt(b, a, x)
+        x_a = signal.filtfilt(b, a, x_a, axis=0)
 
-    return x.copy()
+    return x_a.copy()
