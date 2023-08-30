@@ -311,7 +311,7 @@ class FastICA(ICA):
         """Helper method for fit and fit_transform."""
 
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_t = signal_to_tensor(x, self._device, allow_1d=False)
 
         # Whitening
         if self._whiten_alg != "none":
@@ -324,7 +324,8 @@ class FastICA(ICA):
             self._mean_vec = torch.zeros(
                 x_t.size(0), 1, dtype=x_t.dtype, device=self._device
             )
-            white_mtx = torch.eye(x_t.size(0), dtype=x_t.dtype, device=self._device)
+            white_mtx = torch.eye(x_t.size(1), dtype=x_t.dtype, device=self._device)
+        x_t = x_t.T
 
         n_ch = x_t.size(dim=0)
         if self._n_ics <= 0:

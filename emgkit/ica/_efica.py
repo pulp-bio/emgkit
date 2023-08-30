@@ -342,7 +342,7 @@ class EFICA(ICA):
         """Helper method for fit and fit_transform."""
 
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_t = signal_to_tensor(x, self._device, allow_1d=False)
 
         def sym_orth(w_: torch.Tensor) -> torch.Tensor:
             eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
@@ -364,7 +364,8 @@ class EFICA(ICA):
             self._mean_vec = torch.zeros(
                 x_t.size(0), 1, dtype=x_t.dtype, device=self._device
             )
-            white_mtx = torch.eye(x_t.size(0), dtype=x_t.dtype, device=self._device)
+            white_mtx = torch.eye(x_t.size(1), dtype=x_t.dtype, device=self._device)
+        x_t = x_t.T
 
         n_ch, n_samp = x_t.size()
         if self._n_ics <= 0:

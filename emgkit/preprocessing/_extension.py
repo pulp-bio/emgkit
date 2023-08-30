@@ -49,12 +49,12 @@ def extend_signal(x: Signal, f_ext: int = 1) -> np.ndarray:
     """
 
     # Convert input to array
-    x_a = signal_to_array(x)
+    x_a = signal_to_array(x, allow_1d=True)
 
     n_samp, n_ch = x_a.shape
     n_ch_ext = f_ext * n_ch
 
     x_ext = np.zeros(shape=(n_samp, n_ch_ext), dtype=x_a.dtype)
     for i in range(f_ext):
-        x_ext[i:, i * n_ch : (i + 1) * n_ch] = x[: n_samp - i]
+        x_ext[i:, i * n_ch : (i + 1) * n_ch] = x_a[: n_samp - i]
     return x_ext

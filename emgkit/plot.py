@@ -218,11 +218,8 @@ def plot_signal(
 
     Parameters
     ----------
-    s : ndarray or DataFrame or Series or Tensor
-        Signal to plot:
-        - if it's a NumPy array or PyTorch Tensor, the shape must be (n_channels, n_samples);
-        - if it's a DataFrame or Series, the index and column(s) must represent
-          the samples and the channel(s), respectively.
+    s : Signal
+        A signal with shape (n_samples, n_channels).
     fs : float, default=1.0
         Sampling frequency of the signal (relevant if s is a NumPy array).
     labels : ndarray or Series or None, default=None
@@ -255,8 +252,8 @@ def plot_signal(
     else:
         s_a = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
         if len(s_a.shape) == 1:
-            s_a = s_a.reshape(1, -1)
-        s_df = pd.DataFrame(s_a.T, index=np.arange(s_a.shape[1]) / fs)
+            s_a = s_a.reshape(-1, 1)
+        s_df = pd.DataFrame(s_a, index=np.arange(s_a.shape[0]) / fs)
 
     # Plot signal
     args = [s_df, labels, title, x_label, y_label, fig_size]
@@ -353,7 +350,7 @@ def plot_correlation(
         s_df = s
     else:
         s_a = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
-        s_df = pd.DataFrame(s_a.T)
+        s_df = pd.DataFrame(s_a)
 
     # Compute correlation and plot heatmap
     corr = s_df.corr()
