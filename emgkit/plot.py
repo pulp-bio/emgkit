@@ -30,12 +30,14 @@ from matplotlib import cm
 from matplotlib import patches as mpl_patches
 from matplotlib import pyplot as plt
 
+from ._base import Signal
+
 # Set Seaborn default theme
 sns.set_theme()
 
 
 def _plot_signal_compact(
-    s: pd.DataFrame,
+    s_df: pd.DataFrame,
     labels: pd.Series | None,
     title: str | None = None,
     x_label: str = "Time [s]",
@@ -44,11 +46,11 @@ def _plot_signal_compact(
     resolution: int | None = None,
 ) -> None:
     """Helper function to plot a signal with multiple channels in a compact way, i.e., by plotting a heatmap."""
-    cmap = "icefire" if (s.min() < 0).any() else "magma"
+    cmap = "icefire" if (s_df.min() < 0).any() else "magma"
 
     # Rolling mean
     if resolution is not None:
-        s = s.rolling(resolution, step=resolution).mean().dropna()
+        s_df = s_df.rolling(resolution, step=resolution).mean().dropna()
 
     if labels is not None:
         # Rolling mode on labels
@@ -101,7 +103,7 @@ def _plot_signal_compact(
 
         # Plot heatmap
         sns.heatmap(
-            s.T,
+            s_df.T,
             cmap=cmap,
             robust=True,
             cbar_ax=axes[1, 1],
@@ -124,10 +126,10 @@ def _plot_signal_compact(
         fig.supylabel(y_label)
 
         # Plot heatmap
-        s1 = s
-        s1.index = s.index.map(lambda t: f"{t:.3f}")
+        s_df1 = s_df
+        s_df1.index = s_df.index.map(lambda t: f"{t:.3f}")
         sns.heatmap(
-            s1.T,
+            s_df1.T,
             cmap=cmap,
             robust=True,
             cbar_ax=axes[1],
@@ -136,7 +138,7 @@ def _plot_signal_compact(
 
 
 def _plot_signal_complete(
-    s: pd.DataFrame,
+    s_df: pd.DataFrame,
     labels: pd.Series | None,
     title: str | None = None,
     x_label: str = "Time [s]",
@@ -146,11 +148,12 @@ def _plot_signal_complete(
     """Helper function to plot a signal with multiple channels, each in a different subplot."""
     # Create figure with subplots and shared X axis
     n_cols = 1
-    n_rows = s.shape[1]
+    n_rows = s_df.shape[1]
     fig, axes = plt.subplots(
         n_rows,
         n_cols,
         sharex="all",
+        sharey="all",
         squeeze=False,
         figsize=fig_size,
         layout="constrained",
@@ -181,10 +184,10 @@ def _plot_signal_complete(
         # Create dictionary label -> color
         cmap = cm.get_cmap("plasma", len(label_set))
         color_dict = {lab: cmap(i) for i, lab in enumerate(label_set)}
-        for i, ch_i in enumerate(s):
+        for i, ch_i in enumerate(s_df):
             for label, idx_from, idx_to in labels_intervals:
                 axes[i].plot(
-                    s[ch_i].loc[idx_from:idx_to],
+                    s_df[ch_i].loc[idx_from:idx_to],
                     color=color_dict[label],
                 )
         # Add legend
@@ -195,12 +198,12 @@ def _plot_signal_complete(
             loc="center right",
         )
     else:
-        for i, ch_i in enumerate(s):
-            axes[i].plot(s[ch_i])
+        for i, ch_i in enumerate(s_df):
+            axes[i].plot(s_df[ch_i])
 
 
 def plot_signal(
-    s: np.ndarray | pd.DataFrame | pd.Series | torch.Tensor,
+    s: Signal,
     fs: float = 1.0,
     labels: np.ndarray | pd.Series | None = None,
     style: str = "compact",
@@ -250,10 +253,10 @@ def plot_signal(
     elif isinstance(s, pd.Series):
         s_df = s.to_frame()
     else:
-        s_arr = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
-        if len(s_arr.shape) == 1:
-            s_arr = s_arr.reshape(1, -1)
-        s_df = pd.DataFrame(s_arr.T, index=np.arange(s_arr.shape[1]) / fs)
+        s_a = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
+        if len(s_a.shape) == 1:
+            s_a = s_a.reshape(1, -1)
+        s_df = pd.DataFrame(s_a.T, index=np.arange(s_a.shape[1]) / fs)
 
     # Plot signal
     args = [s_df, labels, title, x_label, y_label, fig_size]
@@ -282,7 +285,7 @@ def plot_waveforms(
     Parameters
     ----------
     wfs : ndarray
-        MUAP waveforms with shape (n_mu, n_channels, waveform_len).
+        MUAP waveforms with shape (n_channels, n_mu, waveform_len).
     fs : float, default=1.0
         Sampling frequency of the signal.
     n_cols : int, default=10
@@ -294,7 +297,7 @@ def plot_waveforms(
     file_name : str or None, default=None
         Name of the file where the image will be saved to.
     """
-    n_ch = wfs.shape[1]
+    n_ch = wfs.shape[0]
     assert (
         n_ch % n_cols == 0
     ), "The number of channels must be divisible for the number of columns."
@@ -314,8 +317,7 @@ def plot_waveforms(
         for j in range(n_cols):
             idx = i * n_cols + j
             axes[i, j].set_title(f"Ch{idx}")
-            axes[i, j].plot(t, wfs[:, idx].T)
-            axes[i, j].axvline(t[wfs.shape[2] // 2], color="k", linestyle="--")
+            axes[i, j].plot(t, wfs[idx].T)
 
     f.suptitle("MUAP waveforms")
     f.supxlabel("Time [ms]")
@@ -328,7 +330,7 @@ def plot_waveforms(
 
 
 def plot_correlation(
-    s: np.ndarray | pd.DataFrame | torch.Tensor,
+    s: Signal,
     write_annotations: bool = False,
     fig_size: tuple[int, int] | None = None,
     file_name: str | None = None,
@@ -337,11 +339,8 @@ def plot_correlation(
 
     Parameters
     ----------
-    s : ndarray or DataFrame or Tensor
-        Signal:
-        - if it's a NumPy array or PyTorch Tensor, the shape must be (n_channels, n_samples);
-        - if it's a DataFrame, the index and columns must represent
-          the samples and the channels, respectively.
+    s : Signal
+        A signal with shape (n_samples, n_channels).
     write_annotations : bool, default=False
         Whether to write annotations inside the correlation matrix or not.
     fig_size : tuple of (int, int) or None, default=None
@@ -353,8 +352,8 @@ def plot_correlation(
     if isinstance(s, pd.DataFrame):
         s_df = s
     else:
-        s_arr = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
-        s_df = pd.DataFrame(s_arr.T)
+        s_a = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
+        s_df = pd.DataFrame(s_a.T)
 
     # Compute correlation and plot heatmap
     corr = s_df.corr()

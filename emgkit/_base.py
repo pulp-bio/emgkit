@@ -72,7 +72,7 @@ def signal_to_tensor(
 
 
 def signal_to_array(x: Signal, allow_1d: bool = False) -> np.ndarray:
-    """Convert the signal to a Tensor.
+    """Convert the signal to an array.
 
     Parameters
     ----------

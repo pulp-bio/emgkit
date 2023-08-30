@@ -1,4 +1,4 @@
-"""Utility functions (e.g., to slice EMG signals by time or label, or to estimate the firing rate of a spike train).
+"""This module contains utility functions.
 
 
 Copyright 2023 Mattia Orlandi
@@ -22,19 +22,20 @@ from math import ceil
 
 import numpy as np
 import pandas as pd
-import torch
 from scipy import signal
 from scipy.cluster.vq import kmeans2
 from sklearn.metrics import silhouette_score
 
+from ._base import Signal, signal_to_array
 
-def power_spectrum(x: np.ndarray, fs: float) -> pd.DataFrame:
+
+def power_spectrum(x: Signal, fs: float) -> pd.DataFrame:
     """Compute the power spectrum of a given signal.
 
     Parameters
     ----------
-    x : array
-        Signal with shape (n_channels, n_samples).
+    x : Signal
+        A signal with shape (n_samples, n_channels).
     fs : float
         Sampling frequency.
 
@@ -43,17 +44,21 @@ def power_spectrum(x: np.ndarray, fs: float) -> pd.DataFrame:
     DataFrame
         Power spectrum for each channel.
     """
-    n_channels, n_samples = x.shape
-    spec_len = n_samples // 2 + 1
+
+    # Convert to array
+    x_a = signal_to_array(x, allow_1d=True).T
+
+    n_ch, n_samp = x_a.shape
+    spec_len = n_samp // 2 + 1
     # Compute frequencies
-    freqs = np.fft.rfftfreq(n_samples, 1 / fs)
+    freqs = np.fft.rfftfreq(n_samp, 1 / fs)
     idx = np.argsort(freqs)
     freqs = freqs[idx]
     # Compute power spectrum channel-wise
-    pow_spec = np.zeros(shape=(spec_len, n_channels))
-    for i in range(n_channels):
+    pow_spec = np.zeros(shape=(spec_len, n_ch))
+    for i in range(n_ch):
         # Compute FFT for current channel
-        ch_fft = np.fft.rfft(x[i])
+        ch_fft = np.fft.rfft(x_a[i])
         # Compute power spectrum for current channel
         ch_pow_spec = np.abs(ch_fft) ** 2
         pow_spec[:, i] = ch_pow_spec[idx]
@@ -244,7 +249,7 @@ def _otsu_score(x: np.ndarray, th: float) -> float:
 
 
 def detect_spikes(
-    ic: np.ndarray | torch.Tensor,
+    ic: Signal,
     ref_period: int,
     bin_alg: str,
     threshold: float | None = None,
@@ -255,7 +260,7 @@ def detect_spikes(
 
     Parameters
     ----------
-    ic : ndarray or Tensor
+    ic : Signal
         Estimated IC with shape (n_samples,).
     ref_period : int
         Refractory period for spike detection.
@@ -282,10 +287,11 @@ def detect_spikes(
         "otsu",
     ), f'The binarization algorithm can be either "kmeans" or "otsu": the provided one was {bin_alg}.'
 
-    ic_arr = ic if isinstance(ic, np.ndarray) else ic.cpu().numpy()
+    # Convert to array
+    ic_a = signal_to_array(ic, allow_1d=True).flatten()  # find_peaks expects a 1D array
 
-    peaks, _ = signal.find_peaks(ic_arr, height=0, distance=ref_period)
-    ic_peaks = ic_arr[peaks]
+    peaks, _ = signal.find_peaks(ic_a, height=0, distance=ref_period)
+    ic_peaks = ic_a[peaks]
 
     if threshold is None:
         if bin_alg == "kmeans":
@@ -299,7 +305,7 @@ def detect_spikes(
             th_range = np.linspace(0, ic_peaks.max())
             otsu_scores = np.asarray([_otsu_score(ic_peaks, th) for th in th_range])
             threshold = _find_threshold(
-                ic_peaks, th_init=th_range[np.argmin(otsu_scores)]
+                ic_peaks, th_init=th_range[np.argmin(otsu_scores)].item()
             )
             labels = ic_peaks >= threshold
             spike_loc = peaks[labels]
@@ -309,62 +315,58 @@ def detect_spikes(
 
     sil = np.nan
     if compute_sil:
-        sil = float(silhouette_score(ic_peaks.reshape(-1, 1), labels))
+        sil = silhouette_score(ic_peaks.reshape(-1, 1), labels)
 
     return spike_loc, threshold, sil
 
 
 def compute_waveforms(
-    emg: np.ndarray,
-    muapts_bin: np.ndarray,
-    wf_len: int,
-    device: torch.device | None = None,
+    emg: Signal,
+    spikes: dict[int, np.ndarray],
+    wf_radius_ms: float,
+    fs: int,
 ) -> np.ndarray:
     """Compute the MUAPT waveforms.
 
     Parameters
     ----------
-    emg : ndarray
-        Raw EMG signal with shape (n_channels, n_samples).
-    muapts_bin : ndarray
-        Binary matrix representing the detected MUAPTs with shape (n_mu, n_samples).
-    wf_len : int
-        Length of the waveform.
-    device : device or None, default=None
-        Torch device.
+    emg : Signal
+        Raw EMG signal with shape (n_samples, n_channels).
+    spikes : dict of {int : ndarray}
+        Dictionary containing the discharge times for each MU.
+    wf_radius_ms : float
+        Radius of the waveform (in ms).
+    fs : int
+        Sampling frequency.
 
     Returns
     -------
     ndarray
-        MUAPT waveforms with shape (n_mu, n_channels, waveform_len).
+        MUAPT waveforms with shape (n_channels, n_mu, waveform_len).
     """
-    n_ch, n_samp = emg.shape
-    n_mu = muapts_bin.shape[0]
-    wf_hlen = wf_len // 2
 
-    emg_t = torch.from_numpy(emg).to(device)
+    # Convert to array
+    emg_a = signal_to_array(emg, allow_1d=True).T
+    n_ch, n_samp = emg_a.shape
+    n_mu = len(spikes.keys())
+    wf_radius = int(wf_radius_ms / 1000 * fs)
+    wf_len = 2 * wf_radius + 1
 
-    wfs = np.zeros(shape=(n_mu, n_ch, wf_len), dtype=emg.dtype)
-    for i in range(n_mu):
-        # Extend i-th MUAPT
-        muapt_i_ext = np.zeros(shape=(wf_len, n_samp), dtype=emg.dtype)
-        for j in range(wf_len):
-            start = max(0, wf_hlen - j)
-            stop = min(n_samp, n_samp + wf_hlen - j)
-            start_ext = max(0, j - wf_hlen)
-            stop_ext = min(n_samp, n_samp + j - wf_hlen)
-            muapt_i_ext[j, start_ext:stop_ext] = muapts_bin[i, start:stop]
-
-        # Apply Least Squares
-        muapt_i_ext_t = torch.from_numpy(muapt_i_ext).to(device)
-        wfs_i = torch.linalg.lstsq(muapt_i_ext_t.T, emg_t.T)[0]
-        wfs[i] = wfs_i.cpu().numpy().T
+    wfs = np.zeros(shape=(n_ch, n_mu, wf_len), dtype=emg_a.dtype)
+    for i, emg_i in enumerate(emg_a):
+        for j, spikes_j in spikes.items():
+            spikes_j = (spikes_j * fs).astype(int)  # seconds -> samples
+            spikes_j = spikes_j[(spikes_j >= wf_len) & (spikes_j <= n_samp - wf_len)]
+            wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg.dtype)
+            for k, s in enumerate(spikes_j):
+                wfs_ij[k] = emg_i[s - wf_radius : s + wf_radius + 1]
+            wfs[i, j] = wfs_ij.mean(axis=0)
 
     return wfs
 
 
 def slice_by_label(
-    s: np.ndarray,
+    s: Signal,
     labels: list[tuple[str, int, int]],
     target_label: str,
     margin: int = 0,
@@ -374,8 +376,8 @@ def slice_by_label(
 
     Parameters
     ----------
-    s : ndarray
-        Signal with shape (n_channels, n_samples).
+    s : Signal
+        A signal with shape (n_samples, n_channels).
     labels : list of tuple of (str, int, int)
         List containing, for each action block, the label of the action together with the first and the last samples.
     target_label : str
@@ -388,28 +390,29 @@ def slice_by_label(
     list[ndarray]
         List of contiguous sub-sequences corresponding to the target label.
     """
+
+    # Convert to array
+    s_a = signal_to_array(s, allow_1d=True)
+
     slice_list = []
     for label, idx_from, idx_to in labels:
         if label == target_label:
-            slice_list.append(s[:, idx_from - margin : idx_to + margin])
+            slice_list.append(s_a[idx_from - margin : idx_to + margin])
 
     return slice_list
 
 
 def sparse_to_dense(
-    muapts: pd.DataFrame,
-    n_mu: int,
+    spikes: dict[int, np.ndarray],
     sig_len_s: float,
     fs: float = 1,
-) -> pd.DataFrame:
+) -> np.ndarray:
     """Convert a DataFrame of MUAPTs from sparse to dense format.
 
     Parameters
     ----------
-    muapts : DataFrame
-        A DataFrame with two columns "MU index" and "Firing time" containing the firing time of each MU.
-    n_mu : int
-        Number of total MUs.
+    spikes : dict of {int : ndarray}
+        Dictionary containing the discharge times for each MU.
     sig_len_s : float
         Length of the signal (in seconds).
     fs : float, default=1
@@ -417,47 +420,36 @@ def sparse_to_dense(
 
     Returns
     -------
-    DataFrame
-        A DataFrame with one column "MU{i}" for each MU and one row for each sample in the signal,
-        containing either ones or zeros (spike/not spike).
+    ndarray
+        Binary array with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
     """
-    n_samples = ceil(sig_len_s * fs)
-    spikes = np.zeros(shape=(n_samples, n_mu), dtype=np.uintc)
-    for mu in range(n_mu):
-        spikes_idx = (
-            muapts.query(f"`MU index` == {mu}")["Firing time"].to_numpy() * fs
-        ).astype(np.int32)
-        spikes[spikes_idx, mu] = 1
+    n_mu = len(spikes.keys())
+    n_samp = ceil(sig_len_s * fs)
+    spikes_dense = np.zeros(shape=(n_samp, n_mu), dtype=int)
+    for mu, cur_spikes in spikes.items():
+        spike_idx = (cur_spikes * fs).astype(int)
+        spike_idx = spike_idx[spike_idx < n_samp]
+        spikes_dense[mu, spike_idx] = 1
 
-    return pd.DataFrame(
-        data=spikes,
-        index=[i / fs for i in range(n_samples)],
-        columns=[f"MU{i}" for i in range(n_mu)],
-    )
+    return spikes_dense
 
 
 def dense_to_sparse(
-    muapts: pd.DataFrame,
-    n_mu: int,
-) -> pd.DataFrame:
+    spikes_dense: np.ndarray,
+) -> dict[int, np.ndarray]:
     """Convert a DataFrame of MUAPTs from sparse to dense format.
 
     Parameters
     ----------
-    muapts : DataFrame
-        A DataFrame with one column "MU{i}" for each MU and one row for each sample in the signal,
-        containing either ones or zeros (spike/not spike).
-    n_mu : int
-        Number of total MUs.
+    spikes_dense : ndarray
+        Binary array with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
 
     Returns
     -------
-    DataFrame
-        A DataFrame with two columns "MU index" and "Firing time" containing the firing time of each MU.
+    dict of ndarrays
+        Spike times of each MU.
     """
-    firing_list = []
-    for mu in range(n_mu):
-        spike_time = muapts.query(f"`MU{mu}` == 1").index
-        firing_list.extend([{"MU index": mu, "Firing time": s} for s in spike_time])
+    n_mu = spikes_dense.shape[1]
+    spikes = {mu: np.flatnonzero(spikes_dense[:, mu]) for mu in range(n_mu)}
 
-    return pd.DataFrame(firing_list)
+    return spikes
