@@ -16,4 +16,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from . import decomposition, plot, preprocessing, spike_stats, utils
+from . import decomposition, ica, plot, preprocessing, spike_stats, utils
