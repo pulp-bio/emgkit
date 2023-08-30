@@ -287,7 +287,7 @@ class EFICA(ICA):
         self,
         x: Signal,
         w_init: torch.Tensor | None = None,
-    ) -> np.ndarray | torch.Tensor:
+    ) -> torch.Tensor:
         """Fit the ICA model on the given signal and return the estimated ICs.
 
         Parameters
@@ -336,9 +336,9 @@ class EFICA(ICA):
 
     def _fit_transform(
         self,
-        x: np.ndarray | torch.Tensor,
+        x: Signal,
         w_init: np.ndarray | torch.Tensor | None = None,
-    ) -> np.ndarray | torch.Tensor:
+    ) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
 
         # Convert input to Tensor

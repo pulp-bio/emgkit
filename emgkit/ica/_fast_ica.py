@@ -258,7 +258,7 @@ class FastICA(ICA):
         self,
         x: Signal,
         w_init: torch.Tensor | None = None,
-    ) -> np.ndarray | torch.Tensor:
+    ) -> torch.Tensor:
         """Fit the ICA model on the given signal and return the estimated ICs.
 
         Parameters
@@ -305,9 +305,7 @@ class FastICA(ICA):
 
         return ics_t.T
 
-    def _fit_transform(
-        self, x: Signal, w_init: torch.Tensor | None
-    ) -> np.ndarray | torch.Tensor:
+    def _fit_transform(self, x: Signal, w_init: torch.Tensor | None) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
 
         # Convert input to Tensor
