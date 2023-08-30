@@ -1,4 +1,4 @@
-"""This package contains the implementation of EMG decomposition algorithms.
+"""Custom warnings.
 
 
 Copyright 2023 Mattia Orlandi
@@ -16,4 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from ._conv_bss import ConvBSS
+
+class ConvergenceWarning(Warning):
+    """Warning related to an algorithm not converging."""

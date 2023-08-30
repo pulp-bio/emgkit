@@ -1,4 +1,4 @@
-"""This package contains the implementation of EMG decomposition algorithms.
+"""This package contains the implementations of ICA-based algorithms such as FastICA.
 
 
 Copyright 2023 Mattia Orlandi
@@ -16,4 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from ._conv_bss import ConvBSS
+from ._abc_ica import ICA
+from ._efica import EFICA, efica
+from ._fast_ica import FastICA, fast_ica
