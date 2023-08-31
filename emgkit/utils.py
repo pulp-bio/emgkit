@@ -355,7 +355,7 @@ def compute_waveforms(
     wfs = np.zeros(shape=(n_ch, n_mu, wf_len), dtype=emg_a.dtype)
     for i, emg_i in enumerate(emg_a):
         for j, spikes_j in spikes.items():
-            spikes_j = (spikes_j * fs).astype(int)  # seconds -> samples
+            spikes_j = (spikes_j * fs).astype("i32")  # seconds -> samples
             spikes_j = spikes_j[(spikes_j >= wf_len) & (spikes_j <= n_samp - wf_len)]
             wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg.dtype)
             for k, s in enumerate(spikes_j):
@@ -406,7 +406,7 @@ def sparse_to_dense(
     spikes: dict[int, np.ndarray],
     sig_len_s: float,
     fs: float = 1,
-) -> np.ndarray:
+) -> pd.DataFrame:
     """Convert a DataFrame of MUAPTs from sparse to dense format.
 
     Parameters
@@ -420,14 +420,18 @@ def sparse_to_dense(
 
     Returns
     -------
-    ndarray
-        Binary array with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
+    DataFrame
+        Binary DataFrame with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
     """
     n_mu = len(spikes.keys())
     n_samp = ceil(sig_len_s * fs)
-    spikes_dense = np.zeros(shape=(n_samp, n_mu), dtype=int)
+    spikes_dense = pd.DataFrame(
+        data=np.zeros(shape=(n_samp, n_mu), dtype="u8"),
+        index=np.arange(n_samp) / fs,
+        columns=[f"MU{i}" for i in range(n_mu)],
+    )
     for mu, cur_spikes in spikes.items():
-        spike_idx = (cur_spikes * fs).astype(int)
+        spike_idx = (cur_spikes * fs).astype("i32")
         spike_idx = spike_idx[spike_idx < n_samp]
         spikes_dense[mu, spike_idx] = 1
 
