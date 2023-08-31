@@ -48,7 +48,7 @@ def load_synthetic_signal(
     snr: int | None = None,
     apply_filter: bool = True,
     seed: int | None = None,
-) -> list[tuple[pd.DataFrame, dict[int, np.ndarray], float]]:
+) -> list[tuple[pd.DataFrame, dict[str, np.ndarray], float]]:
     """Load data from the simulated dataset given the MVC value.
 
     Parameters
@@ -97,7 +97,7 @@ def load_synthetic_signal(
         gt_spikes = {}
         for i in range(n_mu):
             cur_discharges = cur_data["sFirings"][0, i].flatten() / fs
-            gt_spikes[i] = cur_discharges
+            gt_spikes[f"MU{i}"] = cur_discharges
 
         # Apply noise, if specified
         if snr is not None:
@@ -130,7 +130,7 @@ def load_synthetic_signal(
         emg = pd.DataFrame(
             data=emg,
             index=np.arange(n_samp) / fs,
-            columns=[f"EMG_{i + 1}" for i in range(n_ch)],
+            columns=[f"Ch{i}" for i in range(n_ch)],
         )
         data.append((emg, gt_spikes, fs))
 

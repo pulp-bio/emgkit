@@ -94,7 +94,7 @@ def _plot_signal_compact(
         # Scatter plot for labels
         axes[0, 0].scatter(
             x=np.arange(labels.size),
-            y=np.zeros(shape=labels.size, dtype="u8"),
+            y=np.zeros(shape=labels.size, dtype="uint8"),
             c=labels.map(color_dict),
             marker=".",
         )

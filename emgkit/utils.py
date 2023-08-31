@@ -322,7 +322,7 @@ def detect_spikes(
 
 def compute_waveforms(
     emg: Signal,
-    spikes: dict[int, np.ndarray],
+    spikes: dict[str, np.ndarray],
     wf_radius_ms: float,
     fs: int,
 ) -> np.ndarray:
@@ -332,7 +332,7 @@ def compute_waveforms(
     ----------
     emg : Signal
         Raw EMG signal with shape (n_samples, n_channels).
-    spikes : dict of {int : ndarray}
+    spikes : dict of {str : ndarray}
         Dictionary containing the discharge times for each MU.
     wf_radius_ms : float
         Radius of the waveform (in ms).
@@ -354,10 +354,10 @@ def compute_waveforms(
 
     wfs = np.zeros(shape=(n_ch, n_mu, wf_len), dtype=emg_a.dtype)
     for i, emg_i in enumerate(emg_a):
-        for j, spikes_j in spikes.items():
-            spikes_j = (spikes_j * fs).astype("i32")  # seconds -> samples
+        for j, spikes_j in enumerate(spikes.values()):
+            spikes_j = (spikes_j * fs).astype("int32")  # seconds -> samples
             spikes_j = spikes_j[(spikes_j >= wf_len) & (spikes_j <= n_samp - wf_len)]
-            wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg.dtype)
+            wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg_a.dtype)
             for k, s in enumerate(spikes_j):
                 wfs_ij[k] = emg_i[s - wf_radius : s + wf_radius + 1]
             wfs[i, j] = wfs_ij.mean(axis=0)
@@ -387,7 +387,7 @@ def slice_by_label(
 
     Returns
     -------
-    list[ndarray]
+    list of ndarrays
         List of contiguous sub-sequences corresponding to the target label.
     """
 
@@ -403,7 +403,7 @@ def slice_by_label(
 
 
 def sparse_to_dense(
-    spikes: dict[int, np.ndarray],
+    spikes: dict[str, np.ndarray],
     sig_len_s: float,
     fs: float = 1,
 ) -> pd.DataFrame:
@@ -411,7 +411,7 @@ def sparse_to_dense(
 
     Parameters
     ----------
-    spikes : dict of {int : ndarray}
+    spikes : dict of {str : ndarray}
         Dictionary containing the discharge times for each MU.
     sig_len_s : float
         Length of the signal (in seconds).
@@ -426,34 +426,33 @@ def sparse_to_dense(
     n_mu = len(spikes.keys())
     n_samp = ceil(sig_len_s * fs)
     spikes_dense = pd.DataFrame(
-        data=np.zeros(shape=(n_samp, n_mu), dtype="u8"),
+        data=np.zeros(shape=(n_samp, n_mu), dtype="uint8"),
         index=np.arange(n_samp) / fs,
-        columns=[f"MU{i}" for i in range(n_mu)],
+        columns=list(spikes.keys()),
     )
     for mu, cur_spikes in spikes.items():
-        spike_idx = (cur_spikes * fs).astype("i32")
+        spike_idx = (cur_spikes * fs).astype("int32")
         spike_idx = spike_idx[spike_idx < n_samp]
-        spikes_dense[mu, spike_idx] = 1
+        spikes_dense[mu].iloc[spike_idx] = 1
 
     return spikes_dense
 
 
 def dense_to_sparse(
-    spikes_dense: np.ndarray,
-) -> dict[int, np.ndarray]:
+    spikes_dense: pd.DataFrame,
+) -> dict[str, np.ndarray]:
     """Convert a DataFrame of MUAPTs from sparse to dense format.
 
     Parameters
     ----------
-    spikes_dense : ndarray
-        Binary array with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
+    spikes_dense : DataFrame
+        Binary DataFrame with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
 
     Returns
     -------
-    dict of ndarrays
+    dict of {str : ndarray}
         Spike times of each MU.
     """
-    n_mu = spikes_dense.shape[1]
-    spikes = {mu: np.flatnonzero(spikes_dense[:, mu]) for mu in range(n_mu)}
+    spikes = {mu: np.flatnonzero(spikes_dense[mu]) for mu in spikes_dense}
 
     return spikes
