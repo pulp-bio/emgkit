@@ -177,29 +177,28 @@ class ZCAWhitening(WhiteningModel):
         ), "Mean vector or whitening matrix are null, fit the model first."
 
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
 
         # Center and whiten signal
-        x_t -= self._mean_vec
-        x_w_t = self._white_mtx @ x_t
+        x_tensor -= self._mean_vec
+        x_w = self._white_mtx @ x_tensor
 
-        return x_w_t.T
+        return x_w.T
 
     def _fit_transform(self, x: Signal) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
-
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
-        n_samp = x_t.size(1)
-        self._mean_vec = x_t.mean(dim=1, keepdim=True)
-        x_t -= self._mean_vec
+        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
+        n_samp = x_tensor.size(1)
+        self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
+        x_tensor -= self._mean_vec
 
         if self._solver == "svd":
-            e, d, _ = torch.linalg.svd(x_t, full_matrices=False)
+            e, d, _ = torch.linalg.svd(x_tensor, full_matrices=False)
 
             d_mtx = torch.diag(1.0 / d) * sqrt(n_samp - 1)
         elif self._solver == "eigh":
-            d, e = torch.linalg.eigh(torch.cov(x_t))
+            d, e = torch.linalg.eigh(torch.cov(x_tensor))
 
             # Improve numerical stability
             eps = torch.finfo(d.dtype).eps
@@ -220,6 +219,6 @@ class ZCAWhitening(WhiteningModel):
         e *= torch.sign(e[0])  # guarantee consistent sign
 
         self._white_mtx = e @ d_mtx @ e.T
-        x_w_t = self._white_mtx @ x_t
+        x_w = self._white_mtx @ x_tensor
 
-        return x_w_t.T
+        return x_w.T

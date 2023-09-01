@@ -25,7 +25,6 @@ from functools import partial
 from math import sqrt
 from typing import Callable
 
-import numpy as np
 import torch
 
 from .._base import Signal, signal_to_tensor
@@ -327,22 +326,21 @@ class EFICA(ICA):
         ), "Mean vector or separation matrix are null, fit the model first."
 
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
 
         # Decompose signal
-        ics_t = self._sep_mtx @ (x_t - self._mean_vec)
+        ics = self._sep_mtx @ (x_tensor - self._mean_vec)
 
-        return ics_t.T
+        return ics.T
 
     def _fit_transform(
         self,
         x: Signal,
-        w_init: np.ndarray | torch.Tensor | None = None,
+        w_init: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
-
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False)
+        x_tensor = signal_to_tensor(x, self._device, allow_1d=False)
 
         def sym_orth(w_: torch.Tensor) -> torch.Tensor:
             eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
@@ -356,18 +354,20 @@ class EFICA(ICA):
         # Whitening
         if self._whiten_alg != "none":
             whiten_alg_dict = {"zca": zca_whitening, "pca": pca_whitening}
-            x_t, self._mean_vec, white_mtx = whiten_alg_dict[self._whiten_alg](
-                x_t, **self._whiten_kw, device=self._device
+            x_tensor, self._mean_vec, white_mtx = whiten_alg_dict[self._whiten_alg](
+                x_tensor, **self._whiten_kw, device=self._device
             )
         else:
-            x_t = x_t
+            x_tensor = x_tensor
             self._mean_vec = torch.zeros(
-                x_t.size(0), 1, dtype=x_t.dtype, device=self._device
+                x_tensor.size(0), 1, dtype=x_tensor.dtype, device=self._device
             )
-            white_mtx = torch.eye(x_t.size(1), dtype=x_t.dtype, device=self._device)
-        x_t = x_t.T
+            white_mtx = torch.eye(
+                x_tensor.size(1), dtype=x_tensor.dtype, device=self._device
+            )
+        x_tensor = x_tensor.T
 
-        n_ch, n_samp = x_t.size()
+        n_ch, n_samp = x_tensor.size()
         if self._n_ics <= 0:
             self._n_ics = n_ch
         assert (
@@ -375,28 +375,24 @@ class EFICA(ICA):
         ), f"Too few channels ({n_ch}) with respect to target components ({self._n_ics})."
 
         if w_init is None:
-            w_init_t = torch.randn(
-                self._n_ics, n_ch, dtype=x_t.dtype, device=self._device
+            w_init = torch.randn(
+                self._n_ics, n_ch, dtype=x_tensor.dtype, device=self._device
             )
         else:
             assert w_init.shape == (
                 self._n_ics,
                 n_ch,
             ), f"The shape of w_init should be ({self._n_ics}, {n_ch})."
-            w_init_t = (
-                torch.from_numpy(w_init).to(self._device)
-                if isinstance(w_init, np.ndarray)
-                else w_init
-            )
+            w_init = w_init.to(self._device)
 
-        w_no_decorr = w_init_t
+        w_no_decorr = w_init
         w = sym_orth(w_no_decorr)
 
         # 1. Get initial estimation using symmetric FastICA + saddle point test
         saddle_test_done = False
         rot_mtx = 1 / torch.as_tensor(
             [[sqrt(2), -sqrt(2)], [sqrt(2), sqrt(2)]],
-            dtype=x_t.dtype,
+            dtype=x_tensor.dtype,
             device=self._device,
         )
         rotated = torch.zeros(self._n_ics, dtype=torch.bool)
@@ -404,9 +400,9 @@ class EFICA(ICA):
             iter_idx = 1
             converged = False
             while iter_idx <= self._max_iter:
-                g_res = self._g_func(w @ x_t)
+                g_res = self._g_func(w @ x_tensor)
                 w_new_no_decorr = (
-                    g_res.g1_u @ x_t.T / n_samp
+                    g_res.g1_u @ x_tensor.T / n_samp
                     - g_res.g2_u.mean(dim=1, keepdim=True) * w
                 )
                 w_new = sym_orth(w_new_no_decorr)
@@ -438,7 +434,7 @@ class EFICA(ICA):
                 break
 
             logging.info("Performing saddle test...")
-            ics = w @ x_t
+            ics = w @ x_tensor
             ics_g_ret = self._g_func(ics)
             ics_score = (ics_g_ret.g_u.mean(dim=1) - ics_g_ret.g_nu) ** 2
             # Check each pair that has not already been rotated
@@ -469,20 +465,20 @@ class EFICA(ICA):
                 break
 
         # 2-3. Adaptive choice of nonlinearities + Refinement 1
-        emp_kurt = ((w @ x_t) ** 4).mean(dim=1)
+        emp_kurt = ((w @ x_tensor) ** 4).mean(dim=1)
         mu = torch.zeros(
             self._n_ics,
-            dtype=x_t.dtype,
+            dtype=x_tensor.dtype,
             device=self._device,
         )
         rho = torch.zeros(
             self._n_ics,
-            dtype=x_t.dtype,
+            dtype=x_tensor.dtype,
             device=self._device,
         )
         beta = torch.zeros(
             self._n_ics,
-            dtype=x_t.dtype,
+            dtype=x_tensor.dtype,
             device=self._device,
         )
         for k in range(self._n_ics):
@@ -498,20 +494,22 @@ class EFICA(ICA):
                     emp_alpha = 1 / (0.2906 * sqrt(tmp) - 0.1851 * tmp)
                     g_k = partial(_gg_score_function, alpha=min(emp_alpha, 15))
 
-            w_k_new, w_k_new_normal, uncorrelated = self._fine_tuning(x_t, g_k, w[k])
+            w_k_new, w_k_new_normal, uncorrelated = self._fine_tuning(
+                x_tensor, g_k, w[k]
+            )
             if uncorrelated:
                 logging.info(
                     f"IC {k}: new weight too distant from the previous one, keeping the latter..."
                 )
                 w[k] = w_no_decorr[k]
-                s_k = w_k_new_normal @ x_t
+                s_k = w_k_new_normal @ x_tensor
                 g_res = self._g_func(s_k)
                 mu[k] = s_k @ g_res.g1_u / n_samp
                 rho[k] = g_res.g2_u.mean()
                 beta[k] = (g_res.g1_u**2).mean()
             else:
                 w[k] = w_k_new
-                s_k = w_k_new_normal @ x_t
+                s_k = w_k_new_normal @ x_tensor
                 g_u, g1_u = g_k(s_k)
                 mu[k] = s_k @ g_u / n_samp
                 rho[k] = g1_u.mean()
@@ -527,32 +525,32 @@ class EFICA(ICA):
             w_k = torch.diag(c) @ w
             w_k = sym_orth(w_k)
             self._sep_mtx[k] = w_k[k]
-        ics_t = self._sep_mtx @ x_t
+        ics = self._sep_mtx @ x_tensor
         self._sep_mtx = self._sep_mtx @ white_mtx
 
-        return ics_t.T
+        return ics.T
 
     def _fine_tuning(
         self,
-        x_t: torch.Tensor,
+        x: torch.Tensor,
         g_k: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
-        w_k_init_t: torch.Tensor,
+        w_k_init: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, bool]:
         """Helper method for the one-unit fine-tuning."""
 
-        w_k = w_k_init_t
-        w_k_normal = w_k_init_t
+        w_k = w_k_init
+        w_k_normal = w_k_init
         iter_idx = 1
         converged = False
         uncorrelated = False
         while iter_idx <= self._max_iter_ft:
             w_k /= torch.linalg.norm(w_k)
-            g_u, g1_u = g_k(w_k @ x_t)
-            w_k_new = (x_t * g_u).mean(dim=1) - g1_u.mean() * w_k
+            g_u, g1_u = g_k(w_k @ x)
+            w_k_new = (x * g_u).mean(dim=1) - g1_u.mean() * w_k
             w_k_new_normal = w_k_new / torch.linalg.norm(w_k_new)
 
             distance = 1 - abs((w_k_new_normal @ w_k).item())
-            correlation = abs((w_k_new_normal @ w_k_init_t).item())
+            correlation = abs((w_k_new_normal @ w_k_init).item())
             logging.info(
                 f"Fine-tuning iteration {iter_idx}: distance is {distance:.3e}, "
                 f"correlation is {correlation:.2f}."

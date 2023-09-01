@@ -18,6 +18,7 @@ limitations under the License.
 
 from __future__ import annotations
 
+import heapq
 from math import ceil
 
 import numpy as np
@@ -46,9 +47,9 @@ def power_spectrum(x: Signal, fs: float) -> pd.DataFrame:
     """
 
     # Convert to array
-    x_a = signal_to_array(x, allow_1d=True).T
+    x_array = signal_to_array(x, allow_1d=True).T
 
-    n_ch, n_samp = x_a.shape
+    n_ch, n_samp = x_array.shape
     spec_len = n_samp // 2 + 1
     # Compute frequencies
     freqs = np.fft.rfftfreq(n_samp, 1 / fs)
@@ -58,7 +59,7 @@ def power_spectrum(x: Signal, fs: float) -> pd.DataFrame:
     pow_spec = np.zeros(shape=(spec_len, n_ch))
     for i in range(n_ch):
         # Compute FFT for current channel
-        ch_fft = np.fft.rfft(x_a[i])
+        ch_fft = np.fft.rfft(x_array[i])
         # Compute power spectrum for current channel
         ch_pow_spec = np.abs(ch_fft) ** 2
         pow_spec[:, i] = ch_pow_spec[idx]
@@ -89,9 +90,9 @@ def check_delayed_pair(
     Parameters
     ----------
     ref_pulses : ndarray
-        Reference pulse train represented as an array of 1s and 0s with shape (n_pulses1,).
+        Reference pulse train represented as an array of 1s and 0s with shape (n_pulses,).
     sec_pulses : ndarray
-        Secondary pulse train represented as an array of 1s and 0s with shape (n_pulses2,).
+        Secondary pulse train represented as an array of 1s and 0s with shape (n_pulses,).
     fs : float
         Sampling frequency of the pulse trains.
     tol_ms : float
@@ -288,10 +289,13 @@ def detect_spikes(
     ), f'The binarization algorithm can be either "kmeans" or "otsu": the provided one was {bin_alg}.'
 
     # Convert to array
-    ic_a = signal_to_array(ic, allow_1d=True).flatten()  # find_peaks expects a 1D array
+    ic_array = signal_to_array(
+        ic, allow_1d=True
+    ).flatten()  # find_peaks expects a 1D array
 
-    peaks, _ = signal.find_peaks(ic_a, height=0, distance=ref_period)
-    ic_peaks = ic_a[peaks]
+    peaks, _ = signal.find_peaks(ic_array, height=0, distance=ref_period)
+    ic_array /= np.mean(heapq.nlargest(10, ic_array[peaks]))  # rescale
+    ic_peaks = ic_array[peaks]
 
     if threshold is None:
         if bin_alg == "kmeans":
@@ -299,7 +303,7 @@ def detect_spikes(
                 ic_peaks.reshape(-1, 1), k=2, minit="++", seed=seed
             )
             high_cluster_idx = np.argmax(centroids)  # consider only high peaks
-            spike_loc = peaks[labels == high_cluster_idx]
+            spikes = peaks[labels == high_cluster_idx]
             threshold = centroids.mean()
         else:
             th_range = np.linspace(0, ic_peaks.max())
@@ -308,16 +312,20 @@ def detect_spikes(
                 ic_peaks, th_init=th_range[np.argmin(otsu_scores)].item()
             )
             labels = ic_peaks >= threshold
-            spike_loc = peaks[labels]
+            spikes = peaks[labels]
     else:
         labels = ic_peaks >= threshold
-        spike_loc = peaks[labels]
+        spikes = peaks[labels]
+
+    # Remove outliers
+    outlier_th = np.mean(ic_array[spikes]) + 3 * np.std(ic_array[spikes])
+    spikes = spikes[ic_array[spikes] <= outlier_th]
 
     sil = np.nan
     if compute_sil:
         sil = silhouette_score(ic_peaks.reshape(-1, 1), labels)
 
-    return spike_loc, threshold, sil
+    return spikes, threshold, sil
 
 
 def compute_waveforms(
@@ -346,18 +354,18 @@ def compute_waveforms(
     """
 
     # Convert to array
-    emg_a = signal_to_array(emg, allow_1d=True).T
-    n_ch, n_samp = emg_a.shape
+    emg_array = signal_to_array(emg, allow_1d=True).T
+    n_ch, n_samp = emg_array.shape
     n_mu = len(spikes.keys())
     wf_radius = int(wf_radius_ms / 1000 * fs)
     wf_len = 2 * wf_radius + 1
 
-    wfs = np.zeros(shape=(n_ch, n_mu, wf_len), dtype=emg_a.dtype)
-    for i, emg_i in enumerate(emg_a):
+    wfs = np.zeros(shape=(n_ch, n_mu, wf_len), dtype=emg_array.dtype)
+    for i, emg_i in enumerate(emg_array):
         for j, spikes_j in enumerate(spikes.values()):
             spikes_j = (spikes_j * fs).astype("int32")  # seconds -> samples
             spikes_j = spikes_j[(spikes_j >= wf_len) & (spikes_j <= n_samp - wf_len)]
-            wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg_a.dtype)
+            wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg_array.dtype)
             for k, s in enumerate(spikes_j):
                 wfs_ij[k] = emg_i[s - wf_radius : s + wf_radius + 1]
             wfs[i, j] = wfs_ij.mean(axis=0)
@@ -392,12 +400,12 @@ def slice_by_label(
     """
 
     # Convert to array
-    s_a = signal_to_array(s, allow_1d=True)
+    s_array = signal_to_array(s, allow_1d=True)
 
     slice_list = []
     for label, idx_from, idx_to in labels:
         if label == target_label:
-            slice_list.append(s_a[idx_from - margin : idx_to + margin])
+            slice_list.append(s_array[idx_from - margin : idx_to + margin])
 
     return slice_list
 

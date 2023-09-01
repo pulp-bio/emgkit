@@ -250,10 +250,10 @@ def plot_signal(
     elif isinstance(s, pd.Series):
         s_df = s.to_frame()
     else:
-        s_a = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
-        if len(s_a.shape) == 1:
-            s_a = s_a.reshape(-1, 1)
-        s_df = pd.DataFrame(s_a, index=np.arange(s_a.shape[0]) / fs)
+        s_array = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
+        if len(s_array.shape) == 1:
+            s_array = s_array.reshape(-1, 1)
+        s_df = pd.DataFrame(s_array, index=np.arange(s_array.shape[0]) / fs)
 
     # Plot signal
     args = [s_df, labels, title, x_label, y_label, fig_size]
@@ -349,8 +349,8 @@ def plot_correlation(
     if isinstance(s, pd.DataFrame):
         s_df = s
     else:
-        s_a = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
-        s_df = pd.DataFrame(s_a)
+        s_array = s.cpu().numpy() if isinstance(s, torch.Tensor) else s
+        s_df = pd.DataFrame(s_array)
 
     # Compute correlation and plot heatmap
     corr = s_df.corr()

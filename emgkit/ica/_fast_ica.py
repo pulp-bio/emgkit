@@ -23,7 +23,6 @@ import logging
 import warnings
 from math import sqrt
 
-import numpy as np
 import torch
 
 from .._base import Signal, signal_to_tensor
@@ -298,34 +297,35 @@ class FastICA(ICA):
         ), "Mean vector or separation matrix are null, fit the model first."
 
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
 
         # Decompose signal
-        ics_t = self._sep_mtx @ (x_t - self._mean_vec)
+        ics = self._sep_mtx @ (x_tensor - self._mean_vec)
 
-        return ics_t.T
+        return ics.T
 
     def _fit_transform(self, x: Signal, w_init: torch.Tensor | None) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
-
         # Convert input to Tensor
-        x_t = signal_to_tensor(x, self._device, allow_1d=False)
+        x_tensor = signal_to_tensor(x, self._device, allow_1d=False)
 
         # Whitening
         if self._whiten_alg != "none":
             whiten_alg_dict = {"zca": zca_whitening, "pca": pca_whitening}
-            x_t, self._mean_vec, white_mtx = whiten_alg_dict[self._whiten_alg](
-                x_t, **self._whiten_kw, device=self._device
+            x_tensor, self._mean_vec, white_mtx = whiten_alg_dict[self._whiten_alg](
+                x_tensor, **self._whiten_kw, device=self._device
             )
         else:
-            x_t = x_t
+            x_tensor = x_tensor
             self._mean_vec = torch.zeros(
-                x_t.size(0), 1, dtype=x_t.dtype, device=self._device
+                x_tensor.size(0), 1, dtype=x_tensor.dtype, device=self._device
             )
-            white_mtx = torch.eye(x_t.size(1), dtype=x_t.dtype, device=self._device)
-        x_t = x_t.T
+            white_mtx = torch.eye(
+                x_tensor.size(1), dtype=x_tensor.dtype, device=self._device
+            )
+        x_tensor = x_tensor.T
 
-        n_ch = x_t.size(dim=0)
+        n_ch = x_tensor.size(dim=0)
         if self._n_ics <= 0:
             self._n_ics = n_ch
         assert (
@@ -333,31 +333,27 @@ class FastICA(ICA):
         ), f"Too few channels ({n_ch}) with respect to target components ({self._n_ics})."
 
         if w_init is None:
-            w_init_t = torch.randn(
-                self._n_ics, n_ch, dtype=x_t.dtype, device=self._device
+            w_init = torch.randn(
+                self._n_ics, n_ch, dtype=x_tensor.dtype, device=self._device
             )
         else:
             assert w_init.shape == (
                 self._n_ics,
                 n_ch,
             ), f"The shape of w_init should be ({self._n_ics}, {n_ch})."
-            w_init_t = (
-                torch.from_numpy(w_init).to(self._device)
-                if isinstance(w_init, np.ndarray)
-                else w_init
-            )
+            w_init = w_init.to(self._device)
 
         # Perform decomposition
         strategy_dict = {"symmetric": self._symmetric, "deflation": self._deflation}
-        self._sep_mtx = strategy_dict[self._strategy](x_t, w_init_t)
-        ics_t = self._sep_mtx @ x_t
+        self._sep_mtx = strategy_dict[self._strategy](x_tensor, w_init)
+        ics = self._sep_mtx @ x_tensor
         self._sep_mtx = self._sep_mtx @ white_mtx
 
-        return ics_t.T
+        return ics.T
 
-    def _symmetric(self, x_t: torch.Tensor, w_init_t: torch.Tensor) -> torch.Tensor:
+    def _symmetric(self, x: torch.Tensor, w_init: torch.Tensor) -> torch.Tensor:
         """Helper method for symmetric algorithm."""
-        n_samp = x_t.size(1)
+        n_samp = x.size(1)
 
         def sym_orth(w_: torch.Tensor) -> torch.Tensor:
             eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
@@ -368,13 +364,13 @@ class FastICA(ICA):
             d_mtx = torch.diag(1.0 / torch.sqrt(eig_vals))
             return eig_vecs @ d_mtx @ eig_vecs.T @ w_
 
-        w = sym_orth(w_init_t)
+        w = sym_orth(w_init)
 
         saddle_test_done = False
         max_iter = self._max_iter
         rot_mtx = 1 / torch.as_tensor(
             [[sqrt(2), -sqrt(2)], [sqrt(2), sqrt(2)]],
-            dtype=x_t.dtype,
+            dtype=x.dtype,
             device=self._device,
         )
         rotated = torch.zeros(self._n_ics, dtype=torch.bool)
@@ -382,10 +378,9 @@ class FastICA(ICA):
             iter_idx = 1
             converged = False
             while iter_idx <= max_iter:
-                g_res = self._g_func(w @ x_t)
+                g_res = self._g_func(w @ x)
                 w_new = (
-                    g_res.g1_u @ x_t.T / n_samp
-                    - g_res.g2_u.mean(dim=1, keepdim=True) * w
+                    g_res.g1_u @ x.T / n_samp - g_res.g2_u.mean(dim=1, keepdim=True) * w
                 )
                 w_new = sym_orth(w_new)
 
@@ -417,7 +412,7 @@ class FastICA(ICA):
                 break
 
             logging.info("Performing saddle test...")
-            ics = w @ x_t
+            ics = w @ x
             ics_g_ret = self._g_func(ics)
             ics_score = (ics_g_ret.g_u.mean(dim=1) - ics_g_ret.g_nu) ** 2
             # Check each pair that has not already been rotated
@@ -449,9 +444,9 @@ class FastICA(ICA):
 
         return w
 
-    def _deflation(self, x_t: torch.Tensor, w_init_t: torch.Tensor) -> torch.Tensor:
+    def _deflation(self, x: torch.Tensor, w_init: torch.Tensor) -> torch.Tensor:
         """Helper method for deflation algorithm."""
-        w = w_init_t.clone()
+        w = w_init.clone()
 
         failed_convergence = False
         for i in range(self._n_ics):
@@ -463,8 +458,8 @@ class FastICA(ICA):
             iter_idx = 1
             converged = False
             while iter_idx <= self._max_iter:
-                g_res = self._g_func(w_i @ x_t)
-                w_i_new = (x_t * g_res.g1_u).mean(dim=1) - g_res.g2_u.mean() * w_i
+                g_res = self._g_func(w_i @ x)
+                w_i_new = (x * g_res.g1_u).mean(dim=1) - g_res.g2_u.mean() * w_i
                 w_i_new -= w_i_new @ w[:i].T @ w[:i]  # Gram-Schmidt decorrelation
                 w_i_new /= torch.linalg.norm(w_i_new)
 

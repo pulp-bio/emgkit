@@ -45,13 +45,11 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 5) -> np.ndarr
     ndarray
         Filtered signal with shape (n_samples, n_channels).
     """
-
     # Convert input to array
-    x_a = signal_to_array(x)
-
+    x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, cut, btype="low", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x_a, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
 
 
 def highpass_filter(x: Signal, cut: float, fs: float, order: int = 5) -> np.ndarray:
@@ -73,13 +71,11 @@ def highpass_filter(x: Signal, cut: float, fs: float, order: int = 5) -> np.ndar
     ndarray
         Filtered signal with shape (n_samples, n_channels).
     """
-
     # Convert input to array
-    x_a = signal_to_array(x)
-
+    x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, cut, btype="high", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x_a, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
 
 
 def bandpass_filter(
@@ -109,13 +105,11 @@ def bandpass_filter(
     ndarray
         Filtered signal with shape (n_samples, n_channels).
     """
-
     # Convert input to array
-    x_a = signal_to_array(x)
-
+    x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, (low_cut, high_cut), btype="band", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x_a, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
 
 
 def notch_filter(
@@ -148,9 +142,8 @@ def notch_filter(
     ndarray
         Filtered signal with shape (n_samples, n_channels).
     """
-
     # Convert input to array
-    x_a = signal_to_array(x)
+    x_array = signal_to_array(x)
 
     def find_multiples(base: float, limit: float) -> list[float]:
         last_mult = int(round(limit / base))
@@ -169,6 +162,6 @@ def notch_filter(
     # Apply series of notch filters
     for freq in exclude_freqs_set:
         b, a = signal.iirnotch(freq, q, fs)
-        x_a = signal.filtfilt(b, a, x_a, axis=0)
+        x_array = signal.filtfilt(b, a, x_array, axis=0)
 
-    return x_a.copy()
+    return x_array.copy()
