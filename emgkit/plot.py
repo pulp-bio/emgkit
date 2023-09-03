@@ -271,7 +271,7 @@ def plot_signal(
 
 def plot_waveforms(
     wfs: np.ndarray,
-    fs: float = 1.0,
+    fs: float,
     n_cols: int = 10,
     y_label: str = "Amplitude [a.u.]",
     fig_size: tuple[int, int] | None = None,
@@ -283,7 +283,7 @@ def plot_waveforms(
     ----------
     wfs : ndarray
         MUAP waveforms with shape (n_channels, n_mu, waveform_len).
-    fs : float, default=1.0
+    fs : float
         Sampling frequency of the signal.
     n_cols : int, default=10
         Number of columns for subplots.

@@ -18,59 +18,66 @@ limitations under the License.
 
 from __future__ import annotations
 
-import statistics
-
 import numpy as np
+import pandas as pd
+from scipy import signal
+
+from ._base import Signal, signal_to_array
 
 
-def avg_firing_rate(
-    spikes_t: np.ndarray,
-    win_len: float = 0.2,
-    step_len: float = 0.1,
-) -> float:
-    """Estimate the average firing rate of the given spike train.
+def instantaneous_discharge_rate(spikes_t: np.ndarray) -> pd.Series:
+    """Compute the instantaneous discharge rate from the given spike train.
 
     Parameters
     ----------
     spikes_t : ndarray
         Array containing the time of spikes (in seconds).
-    win_len : float, default=0.2
-        Length of the window (in seconds) to consider for the spike count computation.
-    step_len : float, default=0.1
-        Step size (in seconds) between consecutive windows for the spike count computation.
+
+    Returns
+    -------
+    ndarray
+        Discharge rate.
     """
-    n_steps = 0
-    avg_fr = 0.0
-    start = np.min(spikes_t)
-    stop = np.max(spikes_t)
-    while True:
-        # Compute firing rate in current window
-        cur_fr = (
-            np.count_nonzero((spikes_t >= start) & (spikes_t < start + win_len))
-            / win_len
-        )
-        # Update average only if the neuron is active
-        if cur_fr != 0:
-            avg_fr += cur_fr
-            n_steps += 1
-        start += step_len
-
-        if start + win_len >= stop:
-            break
-    if n_steps != 0:
-        avg_fr /= n_steps
-    return avg_fr
+    dr = 1 / np.diff(spikes_t)
+    return pd.Series(dr, index=spikes_t[1:])
 
 
-def cov_isi(spikes_t: np.ndarray, exclude_long_intervals: bool = True) -> float:
+def smoothed_discharge_rate(
+    spikes_bin: Signal, fs: float, win_len_s: float = 1.0
+) -> pd.Series:
+    """Compute the smoothed discharge rate from the spike train using a Hanning window.
+
+    Parameters
+    ----------
+    spikes_bin : Signal
+        Binary representation of the spike train with shape (n_samples,)
+        containing either ones or zeros (spike/not spike).
+    fs : float
+        Sampling frequency.
+    win_len_s : float, default=1.0
+        Size (in seconds) of the Hanning window.
+
+    Returns
+    -------
+    Series
+        A Series with containing the smoothed discharge rate.
+    """
+    # Convert to array
+    spikes_bin_array = signal_to_array(spikes_bin, allow_1d=True).flatten()
+
+    win_len = int(win_len_s * fs)
+    win = signal.windows.hann(win_len)
+    dr = signal.convolve(spikes_bin_array, win, mode="same")
+    return pd.Series(dr, index=np.arange(dr.size) / fs)
+
+
+def cov_isi(spikes_t: np.ndarray) -> float:
     """Compute the Coefficient of Variation of the Inter-Spike Interval (CoV-ISI) of the given spike train.
 
     Parameters
     ----------
     spikes_t : ndarray
         Array containing the time of spikes (in seconds).
-    exclude_long_intervals : bool, default=True
-        Whether to exclude intervals > 250ms (i.e., corresponding to rest periods) from the CoV-ISI computation.
 
     Returns
     -------
@@ -78,14 +85,12 @@ def cov_isi(spikes_t: np.ndarray, exclude_long_intervals: bool = True) -> float:
         The CoV-ISI of the spike train.
     """
     # Compute ISI
-    isi = np.diff(spikes_t).astype(float)
-    if exclude_long_intervals:
-        isi = isi[isi < 0.25]
+    isi = np.diff(spikes_t)
 
     res = np.nan
     if isi.size > 1:
         # Compute CoV-ISI
-        res = statistics.stdev(isi) / statistics.mean(isi)
+        res = isi.std() / isi.mean()
     return res
 
 
@@ -100,10 +105,10 @@ def cov_amp(spikes_amp: np.ndarray) -> float:
     Returns
     -------
     float
-        The CoV-ISI of the spike train.
+        The CoV-Amp of the spike train.
     """
     res = np.nan
     if spikes_amp.size > 1:
         # Compute CoV-Amp
-        res = statistics.stdev(spikes_amp) / statistics.mean(spikes_amp)
+        res = spikes_amp.std() / spikes_amp.mean()
     return res

@@ -68,7 +68,7 @@ def power_spectrum(x: Signal, fs: float) -> pd.DataFrame:
 
 
 def _compute_delay(s1: np.ndarray, s2: np.ndarray) -> int:
-    """Find the lag between two pulse trains with the same length."""
+    """Find the lag between two signals with the same length."""
     # Compute cross-correlation
     corr = signal.correlate(s2, s1, mode="same")
     delay_steps = int(round(s1.shape[0] / 2))
@@ -79,8 +79,8 @@ def _compute_delay(s1: np.ndarray, s2: np.ndarray) -> int:
 
 
 def check_delayed_pair(
-    ref_pulses: np.ndarray,
-    sec_pulses: np.ndarray,
+    ref_pulses_bin: np.ndarray,
+    sec_pulses_bin: np.ndarray,
     fs: float,
     tol_ms: float,
     min_perc: float,
@@ -89,9 +89,9 @@ def check_delayed_pair(
 
     Parameters
     ----------
-    ref_pulses : ndarray
+    ref_pulses_bin : ndarray
         Reference pulse train represented as an array of 1s and 0s with shape (n_pulses,).
-    sec_pulses : ndarray
+    sec_pulses_bin : ndarray
         Secondary pulse train represented as an array of 1s and 0s with shape (n_pulses,).
     fs : float
         Sampling frequency of the pulse trains.
@@ -114,16 +114,16 @@ def check_delayed_pair(
         Number of FNs if the pulse trains are the same, zero otherwise.
     """
     assert (
-        ref_pulses.shape == sec_pulses.shape
+        ref_pulses_bin.shape == sec_pulses_bin.shape
     ), "The two pulse trains must have the same length."
-    assert len(ref_pulses.shape) == 1, "The pulse trains must be 1D."
+    assert len(ref_pulses_bin.shape) == 1, "The pulse trains must be 1D."
 
     # Find delay between reference and secondary pulse trains
-    delay = _compute_delay(ref_pulses, sec_pulses)
+    delay = _compute_delay(ref_pulses_bin, sec_pulses_bin)
 
     # Adjust for delay and get time of pulses
-    ref_pulses_t = np.flatnonzero(ref_pulses) / fs
-    sec_pulses_t = (np.flatnonzero(sec_pulses) - delay) / fs  # compensate for delay
+    ref_pulses_t = np.flatnonzero(ref_pulses_bin) / fs
+    sec_pulses_t = (np.flatnonzero(sec_pulses_bin) - delay) / fs  # compensate for delay
 
     # Filter secondary pulses
     n_sec = sec_pulses_t.size
@@ -194,8 +194,8 @@ def find_replicas(
         while i < len(tr_idx) - cur_tr:
             # Find delay in binarized sources
             same = check_delayed_pair(
-                ref_pulses=pulse_train_dict[tr_idx[cur_tr]],
-                sec_pulses=pulse_train_dict[tr_idx[cur_tr + i]],
+                ref_pulses_bin=pulse_train_dict[tr_idx[cur_tr]],
+                sec_pulses_bin=pulse_train_dict[tr_idx[cur_tr + i]],
                 fs=fs,
                 tol_ms=tol_ms,
                 min_perc=min_perc,
@@ -294,7 +294,7 @@ def detect_spikes(
     ).flatten()  # find_peaks expects a 1D array
 
     peaks, _ = signal.find_peaks(ic_array, height=0, distance=ref_period)
-    ic_array /= np.mean(heapq.nlargest(10, ic_array[peaks]))  # rescale
+    # ic_array /= np.mean(heapq.nlargest(10, ic_array[peaks]))  # rescale
     ic_peaks = ic_array[peaks]
 
     if threshold is None:
@@ -330,9 +330,9 @@ def detect_spikes(
 
 def compute_waveforms(
     emg: Signal,
-    spikes: dict[str, np.ndarray],
+    spikes_t: dict[str, np.ndarray],
     wf_radius_ms: float,
-    fs: int,
+    fs: float,
 ) -> np.ndarray:
     """Compute the MUAPT waveforms.
 
@@ -340,11 +340,11 @@ def compute_waveforms(
     ----------
     emg : Signal
         Raw EMG signal with shape (n_samples, n_channels).
-    spikes : dict of {str : ndarray}
+    spikes_t : dict of {str : ndarray}
         Dictionary containing the discharge times for each MU.
     wf_radius_ms : float
         Radius of the waveform (in ms).
-    fs : int
+    fs : float
         Sampling frequency.
 
     Returns
@@ -356,19 +356,21 @@ def compute_waveforms(
     # Convert to array
     emg_array = signal_to_array(emg, allow_1d=True).T
     n_ch, n_samp = emg_array.shape
-    n_mu = len(spikes.keys())
+    n_mu = len(spikes_t.keys())
     wf_radius = int(wf_radius_ms / 1000 * fs)
     wf_len = 2 * wf_radius + 1
 
     wfs = np.zeros(shape=(n_ch, n_mu, wf_len), dtype=emg_array.dtype)
-    for i, emg_i in enumerate(emg_array):
-        for j, spikes_j in enumerate(spikes.values()):
-            spikes_j = (spikes_j * fs).astype("int32")  # seconds -> samples
-            spikes_j = spikes_j[(spikes_j >= wf_len) & (spikes_j <= n_samp - wf_len)]
-            wfs_ij = np.zeros(shape=(spikes_j.size, wf_len), dtype=emg_array.dtype)
-            for k, s in enumerate(spikes_j):
-                wfs_ij[k] = emg_i[s - wf_radius : s + wf_radius + 1]
-            wfs[i, j] = wfs_ij.mean(axis=0)
+    for ch, emg_ch in enumerate(emg_array):
+        for mu, spikes_t_mu in enumerate(spikes_t.values()):
+            spikes_mu = (spikes_t_mu * fs).astype("int32")  # seconds -> samples
+            spikes_mu = spikes_mu[
+                (spikes_mu >= wf_len) & (spikes_mu <= n_samp - wf_len)
+            ]
+            cur_wf = np.zeros(shape=(spikes_mu.size, wf_len), dtype=emg_array.dtype)
+            for k, s in enumerate(spikes_mu):
+                cur_wf[k] = emg_ch[s - wf_radius : s + wf_radius + 1]
+            wfs[ch, mu] = cur_wf.mean(axis=0)
 
     return wfs
 
@@ -411,19 +413,19 @@ def slice_by_label(
 
 
 def sparse_to_dense(
-    spikes: dict[str, np.ndarray],
+    spikes_t: dict[str, np.ndarray],
     sig_len_s: float,
-    fs: float = 1,
+    fs: float,
 ) -> pd.DataFrame:
     """Convert a DataFrame of MUAPTs from sparse to dense format.
 
     Parameters
     ----------
-    spikes : dict of {str : ndarray}
+    spikes_t : dict of {str : ndarray}
         Dictionary containing the discharge times for each MU.
     sig_len_s : float
         Length of the signal (in seconds).
-    fs : float, default=1
+    fs : float
         Sampling frequency.
 
     Returns
@@ -431,36 +433,39 @@ def sparse_to_dense(
     DataFrame
         Binary DataFrame with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
     """
-    n_mu = len(spikes.keys())
+    n_mu = len(spikes_t.keys())
     n_samp = ceil(sig_len_s * fs)
-    spikes_dense = pd.DataFrame(
+    spikes_bin = pd.DataFrame(
         data=np.zeros(shape=(n_samp, n_mu), dtype="uint8"),
         index=np.arange(n_samp) / fs,
-        columns=list(spikes.keys()),
+        columns=list(spikes_t.keys()),
     )
-    for mu, cur_spikes in spikes.items():
+    for mu, cur_spikes in spikes_t.items():
         spike_idx = (cur_spikes * fs).astype("int32")
         spike_idx = spike_idx[spike_idx < n_samp]
-        spikes_dense[mu].iloc[spike_idx] = 1
+        spikes_bin[mu].iloc[spike_idx] = 1
 
-    return spikes_dense
+    return spikes_bin
 
 
 def dense_to_sparse(
-    spikes_dense: pd.DataFrame,
+    spikes_bin: pd.DataFrame,
+    fs: float,
 ) -> dict[str, np.ndarray]:
     """Convert a DataFrame of MUAPTs from sparse to dense format.
 
     Parameters
     ----------
-    spikes_dense : DataFrame
+    spikes_bin : DataFrame
         Binary DataFrame with shape (n_samples, n_mu) containing either ones or zeros (spike/not spike).
+    fs : float
+        Sampling frequency.
 
     Returns
     -------
     dict of {str : ndarray}
         Spike times of each MU.
     """
-    spikes = {mu: np.flatnonzero(spikes_dense[mu]) for mu in spikes_dense}
+    spikes_t = {mu: np.flatnonzero(spikes_bin[mu]) / fs for mu in spikes_bin}
 
-    return spikes
+    return spikes_t

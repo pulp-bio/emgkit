@@ -53,22 +53,24 @@ def signal_to_tensor(
     """
     # Convert input to Tensor
     if isinstance(x, np.ndarray):
-        x_t = torch.from_numpy(x).to(device)
+        x_tensor = torch.from_numpy(x).to(device)
     elif isinstance(x, pd.DataFrame) or isinstance(x, pd.Series):
-        x_t = torch.from_numpy(x.to_numpy()).to(device)
+        x_tensor = torch.from_numpy(x.to_numpy()).to(device)
     elif isinstance(x, torch.Tensor):
-        x_t = x.to(device)
+        x_tensor = x.to(device)
     else:
         raise TypeError(
             "The input is neither an array, a DataFrame/Series nor a Tensor."
         )
     # Check shape
-    if allow_1d and len(x_t.size()) == 1:
-        x_t = torch.unsqueeze(x_t, dim=1)  # un-squeeze along channel dimension
-    if len(x_t.size()) != 2:
+    if allow_1d and len(x_tensor.size()) == 1:
+        x_tensor = torch.unsqueeze(
+            x_tensor, dim=1
+        )  # un-squeeze along channel dimension
+    if len(x_tensor.size()) != 2:
         raise ValueError("The input is not 2D.")
 
-    return x_t
+    return x_tensor
 
 
 def signal_to_array(x: Signal, allow_1d: bool = False) -> np.ndarray:
@@ -95,19 +97,19 @@ def signal_to_array(x: Signal, allow_1d: bool = False) -> np.ndarray:
     """
     # Convert input to array
     if isinstance(x, np.ndarray):
-        x_a = x
+        x_array = x
     elif isinstance(x, pd.DataFrame) or isinstance(x, pd.Series):
-        x_a = x.to_numpy()
+        x_array = x.to_numpy()
     elif isinstance(x, torch.Tensor):
-        x_a = x.cpu().numpy()
+        x_array = x.cpu().numpy()
     else:
         raise TypeError(
             "The input is neither an array, a DataFrame/Series nor a Tensor."
         )
     # Check shape
-    if allow_1d and len(x_a.shape) == 1:
-        x_a = np.expand_dims(x_a, axis=1)  # un-squeeze along channel dimension
-    if len(x_a.shape) != 2:
+    if allow_1d and len(x_array.shape) == 1:
+        x_array = np.expand_dims(x_array, axis=1)  # un-squeeze along channel dimension
+    if len(x_array.shape) != 2:
         raise ValueError("The input is not 2D.")
 
-    return x_a
+    return x_array

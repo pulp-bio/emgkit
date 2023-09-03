@@ -94,10 +94,10 @@ def load_synthetic_signal(
 
         # Load ground-truth spike trains
         n_mu = cur_data["sFirings"].shape[1]
-        gt_spikes = {}
+        gt_spikes_t = {}
         for i in range(n_mu):
             cur_discharges = cur_data["sFirings"][0, i].flatten() / fs
-            gt_spikes[f"MU{i}"] = cur_discharges
+            gt_spikes_t[f"MU{i}"] = cur_discharges
 
         # Apply noise, if specified
         if snr is not None:
@@ -132,6 +132,6 @@ def load_synthetic_signal(
             index=np.arange(n_samp) / fs,
             columns=[f"Ch{i}" for i in range(n_ch)],
         )
-        data.append((emg, gt_spikes, fs))
+        data.append((emg, gt_spikes_t, fs))
 
     return data
