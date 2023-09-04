@@ -156,7 +156,7 @@ def check_delayed_pair(
 
 
 def find_replicas(
-    pulse_trains: np.ndarray,
+    pulse_trains: Signal,
     fs: float,
     tol_ms: float,
     min_perc: float,
@@ -165,8 +165,8 @@ def find_replicas(
 
     Parameters
     ----------
-    pulse_trains : ndarray
-        Set of pulse trains represented as arrays of 1s and 0s with shape (n_trains, n_samples).
+    pulse_trains : Signal
+        Set of pulse trains represented as arrays of 1s and 0s with shape (n_samples, n_trains).
     fs : float
         Sampling frequency of the pulse trains.
     tol_ms : float
@@ -179,10 +179,12 @@ def find_replicas(
     dict of (int: list of int)
         Dictionary containing delayed replicas.
     """
-    n_trains = pulse_trains.shape[0]
+    # Convert to array
+    pulse_trains_array = signal_to_array(pulse_trains)
+    n_trains = pulse_trains_array.shape[1]
 
     # Convert to dictionary
-    pulse_train_dict = {i: pulse_trains[i] for i in range(n_trains)}
+    pulse_train_dict = {i: pulse_trains_array[:, i] for i in range(n_trains)}
 
     # Check each pair
     cur_tr = 0
