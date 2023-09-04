@@ -16,4 +16,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from ._conv_bss import ConvBSS
+from ._emg_bss import EMGBSS

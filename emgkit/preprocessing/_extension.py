@@ -38,7 +38,7 @@ def extend_signal(x: Signal, f_ext: int = 1) -> np.ndarray:
     Returns
     -------
     ndarray
-        Extended signal with shape (f_ext * n_channels, n_samples).
+        Extended signal with shape (n_samples - f_ext + 1, f_ext * n_channels).
 
     Raises
     ------
@@ -54,7 +54,7 @@ def extend_signal(x: Signal, f_ext: int = 1) -> np.ndarray:
     n_samp, n_ch = x_array.shape
     n_ch_ext = f_ext * n_ch
 
-    x_ext = np.zeros(shape=(n_samp, n_ch_ext), dtype=x_array.dtype)
+    x_ext = np.zeros(shape=(n_samp - f_ext + 1, n_ch_ext), dtype=x_array.dtype)
     for i in range(f_ext):
-        x_ext[i:, i * n_ch : (i + 1) * n_ch] = x_array[: n_samp - i]
+        x_ext[:, i * n_ch : (i + 1) * n_ch] = x_array[f_ext - i - 1 : n_samp - i]
     return x_ext

@@ -18,7 +18,6 @@ limitations under the License.
 
 from __future__ import annotations
 
-import heapq
 from math import ceil
 
 import numpy as np

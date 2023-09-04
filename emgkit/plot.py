@@ -36,6 +36,71 @@ from ._base import Signal
 sns.set_theme()
 
 
+def _plot_signal_complete(
+    s_df: pd.DataFrame,
+    labels: pd.Series | None,
+    title: str | None = None,
+    x_label: str = "Time [s]",
+    y_label: str = "Amplitude [a.u.]",
+    fig_size: tuple[int, int] | None = None,
+) -> None:
+    """Helper function to plot a signal with multiple channels, each in a different subplot."""
+    # Create figure with subplots and shared X axis
+    n_cols = 1
+    n_rows = s_df.shape[1]
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        sharex="all",
+        sharey="all",
+        squeeze=False,
+        figsize=fig_size,
+        layout="constrained",
+    )
+    axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
+    # Set title and label of X and Y axes
+    if title is not None:
+        fig.suptitle(title, fontsize="xx-large")
+    fig.supxlabel(x_label)
+    fig.supylabel(y_label)
+
+    # Plot signal
+    if labels is not None:
+        # Get label intervals
+        labels_intervals = []
+        labels_tmp = [
+            list(group)
+            for _, group in groupby(
+                labels.reset_index().to_numpy().tolist(), key=lambda t: t[1]
+            )
+        ]
+        for cur_label in labels_tmp:
+            cur_label_start, cur_label_name = cur_label[0]
+            cur_label_stop = cur_label[-1][0]
+            labels_intervals.append((cur_label_name, cur_label_start, cur_label_stop))
+        # Get set of unique labels
+        label_set = set(map(lambda t: t[0], labels_intervals))
+        # Create dictionary label -> color
+        cmap = cm.get_cmap("plasma", len(label_set))
+        color_dict = {lab: cmap(i) for i, lab in enumerate(label_set)}
+        for i, ch_i in enumerate(s_df):
+            for label, idx_from, idx_to in labels_intervals:
+                axes[i].plot(
+                    s_df[ch_i].loc[idx_from:idx_to],
+                    color=color_dict[label],
+                )
+        # Add legend
+        fig.legend(
+            handles=[
+                mpl_patches.Patch(color=c, label=lab) for lab, c in color_dict.items()
+            ],
+            loc="center right",
+        )
+    else:
+        for i, ch_i in enumerate(s_df):
+            axes[i].plot(s_df[ch_i])
+
+
 def _plot_signal_compact(
     s_df: pd.DataFrame,
     labels: pd.Series | None,
@@ -137,76 +202,11 @@ def _plot_signal_compact(
         )
 
 
-def _plot_signal_complete(
-    s_df: pd.DataFrame,
-    labels: pd.Series | None,
-    title: str | None = None,
-    x_label: str = "Time [s]",
-    y_label: str = "Amplitude [a.u.]",
-    fig_size: tuple[int, int] | None = None,
-) -> None:
-    """Helper function to plot a signal with multiple channels, each in a different subplot."""
-    # Create figure with subplots and shared X axis
-    n_cols = 1
-    n_rows = s_df.shape[1]
-    fig, axes = plt.subplots(
-        n_rows,
-        n_cols,
-        sharex="all",
-        sharey="all",
-        squeeze=False,
-        figsize=fig_size,
-        layout="constrained",
-    )
-    axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
-    # Set title and label of X and Y axes
-    if title is not None:
-        fig.suptitle(title, fontsize="xx-large")
-    fig.supxlabel(x_label)
-    fig.supylabel(y_label)
-
-    # Plot signal
-    if labels is not None:
-        # Get label intervals
-        labels_intervals = []
-        labels_tmp = [
-            list(group)
-            for _, group in groupby(
-                labels.reset_index().to_numpy().tolist(), key=lambda t: t[1]
-            )
-        ]
-        for cur_label in labels_tmp:
-            cur_label_start, cur_label_name = cur_label[0]
-            cur_label_stop = cur_label[-1][0]
-            labels_intervals.append((cur_label_name, cur_label_start, cur_label_stop))
-        # Get set of unique labels
-        label_set = set(map(lambda t: t[0], labels_intervals))
-        # Create dictionary label -> color
-        cmap = cm.get_cmap("plasma", len(label_set))
-        color_dict = {lab: cmap(i) for i, lab in enumerate(label_set)}
-        for i, ch_i in enumerate(s_df):
-            for label, idx_from, idx_to in labels_intervals:
-                axes[i].plot(
-                    s_df[ch_i].loc[idx_from:idx_to],
-                    color=color_dict[label],
-                )
-        # Add legend
-        fig.legend(
-            handles=[
-                mpl_patches.Patch(color=c, label=lab) for lab, c in color_dict.items()
-            ],
-            loc="center right",
-        )
-    else:
-        for i, ch_i in enumerate(s_df):
-            axes[i].plot(s_df[ch_i])
-
-
 def plot_signal(
     s: Signal,
     fs: float = 1.0,
     labels: np.ndarray | pd.Series | None = None,
-    style: str = "compact",
+    style: str = "complete",
     title: str | None = None,
     x_label: str = "Time [s]",
     y_label: str = "Amplitude [a.u.]",
@@ -224,8 +224,8 @@ def plot_signal(
         Sampling frequency of the signal (relevant if s is a NumPy array).
     labels : ndarray or Series or None, default=None
         NumPy array or Series containing a label for each sample.
-    style : {"compact", "complete"}
-        Style of the plot (either "compact" or "complete").
+    style : {"complete", "compact"}
+        Style of the plot (either "complete" or "compact").
     title : str or None, default=None
         Title of the plot.
     x_label : str, default="Time [s]"
