@@ -35,8 +35,8 @@ def instantaneous_discharge_rate(spikes_t: np.ndarray) -> pd.Series:
 
     Returns
     -------
-    ndarray
-        Discharge rate.
+    Series
+        A Series containing the instantaneous discharge rate.
     """
     dr = 1 / np.diff(spikes_t)
     return pd.Series(dr, index=spikes_t[1:])
@@ -60,7 +60,7 @@ def smoothed_discharge_rate(
     Returns
     -------
     Series
-        A Series with containing the smoothed discharge rate.
+        A Series containing the smoothed discharge rate.
     """
     # Convert to array
     spikes_bin_array = signal_to_array(spikes_bin, allow_1d=True).flatten()
