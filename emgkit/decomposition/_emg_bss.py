@@ -55,9 +55,9 @@ class EMGBSS:
         Maximum n. of iterations.
     sil_th : float, default=0.85
         Minimum silhouette threshold for considering a MU as valid.
-    cov_isi_th : float, default=0.6
+    cov_isi_th : float, default=0.5
         Maximum CoV-ISI for considering a MU as valid.
-    dup_perc : float, default=0.5
+    dup_perc : float, default=0.3
         Minimum percentage of synchronized discharges for considering two MUs as duplicates.
     dup_tol_ms : float, default=0.5
         Tolerance (in ms) for considering two discharges as synchronized.

@@ -67,6 +67,7 @@ def smoothed_discharge_rate(
 
     win_len = int(win_len_s * fs)
     win = signal.windows.hann(win_len)
+    win = win / win.sum() * fs  # normalize window area
     dr = signal.convolve(spikes_bin_array, win, mode="same")
     return pd.Series(dr, index=np.arange(dr.size) / fs)
 
