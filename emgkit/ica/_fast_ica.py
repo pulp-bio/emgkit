@@ -41,8 +41,8 @@ def fast_ica(
     conv_th: float = 1e-4,
     max_iter: int = 200,
     do_saddle_test: bool = False,
+    device: torch.device | str | None = None,
     seed: int | None = None,
-    device: torch.device | None = None,
     w_init: torch.Tensor | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -66,10 +66,10 @@ def fast_ica(
         Maximum n. of iterations.
     do_saddle_test : bool, default=False
         Whether to perform the test of saddle points.
+    device : device or str or None, default=None
+        Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
-    device : device or None, default=None
-        Torch device.
     w_init : Tensor or None, default=None
         Initial separation matrix with shape (n_components, n_channels).
     **kwargs
@@ -97,8 +97,8 @@ def fast_ica(
         conv_th,
         max_iter,
         do_saddle_test,
-        seed,
         device,
+        seed,
         **kwargs,
     )
     ics = ica_model.fit_transform(x, w_init)
@@ -125,10 +125,10 @@ class FastICA(ICA):
         Maximum n. of iterations.
     do_saddle_test : bool, default=False
         Whether to perform the test of saddle points (relevant for symmetric strategy).
+    device : device or str or None, default=None
+        Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
-    device : device or None, default=None
-        Torch device.
     **kwargs
         Keyword arguments forwarded to whitening algorithm.
 
@@ -163,8 +163,8 @@ class FastICA(ICA):
         conv_th: float = 1e-4,
         max_iter: int = 200,
         do_saddle_test: bool = False,
+        device: torch.device | str | None = None,
         seed: int | None = None,
-        device: torch.device | None = None,
         **kwargs,
     ):
         assert whiten_alg in (
@@ -193,10 +193,10 @@ class FastICA(ICA):
             f'Instantiating FastICA using "{strategy}" strategy and "{g_name}" contrast function.'
         )
 
-        self._n_ics: int = n_ics
-        self._whiten_alg: str = whiten_alg
-        self._whiten_kw: dict = kwargs
-        self._strategy: str = strategy
+        self._n_ics = n_ics
+        self._whiten_alg = whiten_alg
+        self._whiten_kw = kwargs
+        self._strategy = strategy
         g_dict = {
             "logcosh": cf.logcosh,
             "gauss": cf.gauss,
@@ -204,11 +204,11 @@ class FastICA(ICA):
             "skewness": cf.skewness,
             "rati": cf.rati,
         }
-        self._g_func: cf.ContrastFunction = g_dict[g_name]
-        self._conv_th: float = conv_th
-        self._max_iter: int = max_iter
-        self._do_saddle_test: bool = do_saddle_test
-        self._device: torch.device | None = device
+        self._g_func = g_dict[g_name]
+        self._conv_th = conv_th
+        self._max_iter = max_iter
+        self._do_saddle_test = do_saddle_test
+        self._device = torch.device(device) if isinstance(device, str) else device
 
         if seed is not None:
             torch.manual_seed(seed)

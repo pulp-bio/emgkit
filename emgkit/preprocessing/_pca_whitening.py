@@ -34,7 +34,7 @@ def pca_whitening(
     n_pcs: int | str = -1,
     keep_dim: bool = False,
     solver: str = "svd",
-    device: torch.device | None = None,
+    device: torch.device | str | None = None,
 ) -> tuple[np.ndarray | torch.Tensor, torch.Tensor, torch.Tensor]:
     """Function performing PCA whitening.
 
@@ -51,7 +51,7 @@ def pca_whitening(
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
+    device : device or str or None, default=None
         Torch device.
 
     Returns
@@ -90,7 +90,7 @@ class PCAWhitening(WhiteningModel):
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
+    device : device or str or None, default=None
         Torch device.
 
     Attributes
@@ -108,7 +108,7 @@ class PCAWhitening(WhiteningModel):
         n_pcs: int | str = -1,
         keep_dim: bool = False,
         solver: str = "svd",
-        device: torch.device | None = None,
+        device: torch.device | str | None = None,
     ) -> None:
         assert isinstance(n_pcs, int) or (
             isinstance(n_pcs, str) and n_pcs == "auto"
@@ -117,10 +117,10 @@ class PCAWhitening(WhiteningModel):
 
         logging.info(f'Instantiating PCAWhitening using "{solver}" solver.')
 
-        self._n_pcs: int | str = n_pcs
+        self._n_pcs = n_pcs
         self._keep_dim = keep_dim
-        self._solver: str = solver
-        self._device: torch.device | None = device
+        self._solver = solver
+        self._device = torch.device(device) if isinstance(device, str) else device
 
         self._exp_var_ratio: np.ndarray | None = None
         self._mean_vec: torch.Tensor | None = None

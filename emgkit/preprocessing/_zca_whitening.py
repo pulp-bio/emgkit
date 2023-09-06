@@ -31,7 +31,7 @@ from ._abc_whitening import WhiteningModel
 def zca_whitening(
     x: Signal,
     solver: str = "svd",
-    device: torch.device | None = None,
+    device: torch.device | str | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Function performing ZCA whitening.
 
@@ -41,7 +41,7 @@ def zca_whitening(
         A signal with shape (n_samples, n_channels).
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
+    device : device or str or None, default=None
         Torch device.
 
     Returns
@@ -73,7 +73,7 @@ class ZCAWhitening(WhiteningModel):
     ----------
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
-    device : device or None, default=None
+    device : device or str or None, default=None
         Torch device.
 
     Attributes
@@ -84,13 +84,15 @@ class ZCAWhitening(WhiteningModel):
         Torch device.
     """
 
-    def __init__(self, solver: str = "svd", device: torch.device | None = None) -> None:
+    def __init__(
+        self, solver: str = "svd", device: torch.device | str | None = None
+    ) -> None:
         assert solver in ("svd", "eigh"), 'The solver must be either "svd" or "eigh".'
 
         logging.info(f'Instantiating ZCAWhitening using "{solver}" solver.')
 
-        self._solver: str = solver
-        self._device: torch.device | None = device
+        self._solver = solver
+        self._device = torch.device(device) if isinstance(device, str) else device
 
         self._mean_vec: torch.Tensor | None = None
         self._white_mtx: torch.Tensor | None = None

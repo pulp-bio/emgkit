@@ -66,8 +66,8 @@ def efica(
     conv_th_ft: float = 1e-5,
     max_iter: int = 200,
     max_iter_ft: int = 50,
+    device: torch.device | str | None = None,
     seed: int | None = None,
-    device: torch.device | None = None,
     w_init: torch.Tensor | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -91,10 +91,10 @@ def efica(
         Maximum n. of iterations for symmetric FastICA.
     max_iter_ft : int, default=50
         Maximum n. of iterations for fine-tuning.
+    device : device or str or None, default=None
+        Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
-    device : device or None, default=None
-        Torch device.
     w_init : Tensor or None, default=None
         Initial separation matrix with shape (n_components, n_channels).
     **kwargs
@@ -122,8 +122,8 @@ def efica(
         conv_th_ft,
         max_iter,
         max_iter_ft,
-        seed,
         device,
+        seed,
         **kwargs,
     )
     ics = ica_model.fit_transform(x, w_init)
@@ -150,10 +150,10 @@ class EFICA(ICA):
         Maximum n. of iterations for symmetric FastICA.
     max_iter_ft : int, default=50
         Maximum n. of iterations for fine-tuning.
+    device : device or str or None, default=None
+        Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
-    device : device or None, default=None
-        Torch device.
     **kwargs
         Keyword arguments forwarded to whitening algorithm.
 
@@ -192,8 +192,8 @@ class EFICA(ICA):
         conv_th_ft: float = 1e-5,
         max_iter: int = 200,
         max_iter_ft: int = 50,
+        device: torch.device | str | None = None,
         seed: int | None = None,
-        device: torch.device | None = None,
         **kwargs,
     ):
         assert whiten_alg in (
@@ -222,9 +222,9 @@ class EFICA(ICA):
 
         logging.info(f'Instantiating EFICA using "{g_name}" contrast function.')
 
-        self._n_ics: int = n_ics
-        self._whiten_alg: str = whiten_alg
-        self._whiten_kw: dict = kwargs
+        self._n_ics = n_ics
+        self._whiten_alg = whiten_alg
+        self._whiten_kw = kwargs
         g_dict = {
             "logcosh": cf.logcosh,
             "gauss": cf.gauss,
@@ -232,12 +232,12 @@ class EFICA(ICA):
             "skewness": cf.skewness,
             "rati": cf.rati,
         }
-        self._g_func: cf.ContrastFunction = g_dict[g_name]
-        self._conv_th: float = conv_th
-        self._conv_th_ft: float = conv_th_ft
-        self._max_iter: int = max_iter
-        self._max_iter_ft: int = max_iter_ft
-        self._device: torch.device | None = device
+        self._g_func = g_dict[g_name]
+        self._conv_th = conv_th
+        self._conv_th_ft = conv_th_ft
+        self._max_iter = max_iter
+        self._max_iter_ft = max_iter_ft
+        self._device = torch.device(device) if isinstance(device, str) else device
 
         if seed is not None:
             torch.manual_seed(seed)
