@@ -19,6 +19,11 @@ limitations under the License.
 
 from ._abc_whitening import WhiteningModel
 from ._extension import extend_signal
-from ._filtering import bandpass_filter, highpass_filter, lowpass_filter, notch_filter
+from ._filtering import (
+    bandpass_filter,
+    bandstop_filter,
+    highpass_filter,
+    lowpass_filter,
+)
 from ._pca_whitening import PCAWhitening, pca_whitening
 from ._zca_whitening import ZCAWhitening, zca_whitening
