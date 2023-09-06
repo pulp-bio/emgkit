@@ -197,7 +197,7 @@ class ZCAWhitening(WhiteningModel):
             e, d, _ = torch.linalg.svd(x_tensor, full_matrices=False)
 
             d_mtx = torch.diag(1.0 / d) * sqrt(n_samp - 1)
-        elif self._solver == "eigh":
+        else:
             d, e = torch.linalg.eigh(torch.cov(x_tensor))
 
             # Improve numerical stability
@@ -211,11 +211,7 @@ class ZCAWhitening(WhiteningModel):
 
             sort_idx = torch.argsort(d, descending=True)
             d, e = d[sort_idx], e[:, sort_idx]
-
             d_mtx = torch.diag(1.0 / torch.sqrt(d))
-        else:
-            raise NotImplementedError("Unknown solver.")
-
         e *= torch.sign(e[0])  # guarantee consistent sign
 
         self._white_mtx = e @ d_mtx @ e.T

@@ -31,9 +31,7 @@ from ._abc_whitening import WhiteningModel
 
 def pca_whitening(
     x: Signal,
-    n_pcs: int = -1,
-    p_discard: float = 0,
-    var_th: float = 1,
+    n_pcs: int | str = -1,
     solver: str = "svd",
     device: torch.device | None = None,
 ) -> tuple[np.ndarray | torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -43,12 +41,11 @@ def pca_whitening(
     ----------
     x : Signal
         A signal with shape (n_samples, n_channels).
-    n_pcs : int, default=-1
-        Number of components to be selected (if zero or negative, all components will be retained)).
-    p_discard : float, default=0
-        Proportion of components to be discarded; relevant if n_pcs is not specified.
-    var_th : float, default=1
-        Cut-off threshold for the variances; relevant if n_pcs and p_discard are not specified.
+    n_pcs : int or str, default=-1
+        Number of components to be selected:
+        - if set to the string "auto", it will be chosen automatically based on the average of the smallest
+        half of eigenvalues/singular values;
+        - if zero or negative, all components will be retained.
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
     device : device or None, default=None
@@ -70,7 +67,7 @@ def pca_whitening(
     ValueError
         If the input is not 2D.
     """
-    whiten_model = PCAWhitening(n_pcs, p_discard, var_th, solver, device)
+    whiten_model = PCAWhitening(n_pcs, solver, device)
     x_w = whiten_model.fit_transform(x)
 
     return x_w, whiten_model.mean_vec, whiten_model.white_mtx
@@ -81,12 +78,11 @@ class PCAWhitening(WhiteningModel):
 
     Parameters
     ----------
-    n_pcs : int, default=-1
-        Number of components to be selected (if zero or negative, all components will be retained)).
-    p_discard : float, default=0
-        Proportion of components to be discarded; relevant if n_pcs is not specified.
-    var_th : float, default=1
-        Cut-off threshold for the variances; relevant if n_pcs and p_discard are not specified.
+    n_pcs : int or str, default=-1
+        Number of components to be selected:
+        - if set to the string "auto", it will be chosen automatically based on the average of the smallest
+        half of eigenvalues/singular values;
+        - if zero or negative, all components will be retained.
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
     device : device or None, default=None
@@ -94,10 +90,6 @@ class PCAWhitening(WhiteningModel):
 
     Attributes
     ----------
-    _p_discard : float or None
-        Proportion of components to be discarded.
-    _var_th : float or None
-        Cut-off threshold for the variances.
     _solver : str
         The solver used for whitening, either "svd" (default) or "eigh".
     _device : device or None
@@ -106,25 +98,18 @@ class PCAWhitening(WhiteningModel):
 
     def __init__(
         self,
-        n_pcs: int = -1,
-        p_discard: float = 0,
-        var_th: float = 1,
+        n_pcs: int | str = -1,
         solver: str = "svd",
         device: torch.device | None = None,
     ) -> None:
-        assert (
-            p_discard is None or 0.0 <= p_discard < 1.0
-        ), "The proportion of components to discard must be in [0, 1[ range."
-        assert (
-            var_th is None or 0.0 < var_th <= 1.0
-        ), "The cut-off threshold must be in ]0, 1] range."
+        assert isinstance(n_pcs, int) or (
+            isinstance(n_pcs, str) and n_pcs == "auto"
+        ), 'n_pcs must be either an integer or "auto".'
         assert solver in ("svd", "eigh"), 'The solver must be either "svd" or "eigh".'
 
         logging.info(f'Instantiating PCAWhitening using "{solver}" solver.')
 
-        self._n_pcs: int = n_pcs
-        self._p_discard: float = p_discard
-        self._var_th: float = var_th
+        self._n_pcs: int | str = n_pcs
         self._solver: str = solver
         self._device: torch.device | None = device
 
@@ -243,9 +228,8 @@ class PCAWhitening(WhiteningModel):
 
             d_sq = d**2  # singular values are the square root of eigenvalues
             exp_var_ratio = (d_sq / d_sq.sum()).cpu().numpy()
-
             d_mtx = torch.diag(1.0 / d) * sqrt(n_samp - 1)
-        elif self._solver == "eigh":
+        else:
             d, e = torch.linalg.eigh(torch.cov(x_tensor))
 
             # Improve numerical stability
@@ -259,34 +243,16 @@ class PCAWhitening(WhiteningModel):
 
             sort_idx = torch.argsort(d, descending=True)
             d, e = d[sort_idx], e[:, sort_idx]
-
             exp_var_ratio = (d / d.sum()).cpu().numpy()
-
             d_mtx = torch.diag(1.0 / torch.sqrt(d))
-        else:
-            raise NotImplementedError("Unknown solver.")
-
         e *= torch.sign(e[0])  # guarantee consistent sign
 
         # Select number of components to retain
-        if self._n_pcs <= 0:
-            if self._p_discard == 0:
-                if self._var_th == 1:
-                    # n_pcs, p_discard and var_th are not specified -> all components are retained
-                    self._n_pcs = n_ch
-                else:
-                    # var_th is not specified -> choose components via explained variance
-                    self._n_pcs = (
-                        np.argmax(np.cumsum(exp_var_ratio) >= self._var_th).item() + 1
-                    )
-            else:
-                # p_discard is not specified -> choose components using quantiles
-                self._n_pcs = int(
-                    torch.count_nonzero(
-                        torch.ge(d, torch.quantile(d, self._p_discard))
-                    ).item()
-                )
-
+        if self._n_pcs == "auto":
+            rank_th = d[d.size(0) // 2 :].mean()
+            self._n_pcs = torch.sum(torch.ge(d, rank_th))
+        elif self._n_pcs <= 0:
+            self._n_pcs = n_ch
         logging.info(f"Reducing dimension of data from {n_ch} to {self._n_pcs}.")
         d_mtx = d_mtx[: self._n_pcs, : self._n_pcs]
         e = e[:, : self._n_pcs]

@@ -295,7 +295,6 @@ def detect_spikes(
     ).flatten()  # find_peaks expects a 1D array
 
     peaks, _ = signal.find_peaks(ic_array, height=0, distance=ref_period)
-    # ic_array /= np.mean(heapq.nlargest(10, ic_array[peaks]))  # rescale
     ic_peaks = ic_array[peaks]
 
     if threshold is None:
@@ -317,10 +316,6 @@ def detect_spikes(
     else:
         labels = ic_peaks >= threshold
         spikes = peaks[labels]
-
-    # Remove outliers
-    outlier_th = np.mean(ic_array[spikes]) + 3 * np.std(ic_array[spikes])
-    spikes = spikes[ic_array[spikes] <= outlier_th]
 
     sil = np.nan
     if compute_sil:
