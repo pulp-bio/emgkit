@@ -196,9 +196,10 @@ class ZCAWhitening(WhiteningModel):
         if self._solver == "svd":
             e, d, _ = torch.linalg.svd(x_tensor, full_matrices=False)
 
-            d_mtx = torch.diag(1.0 / d) * sqrt(n_samp - 1)
+            d_mtx = torch.diag(1.0 / d) * sqrt(n_samp)
         else:
-            d, e = torch.linalg.eigh(torch.cov(x_tensor))
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+            d, e = torch.linalg.eigh(cov_mtx)
 
             # Improve numerical stability
             eps = torch.finfo(d.dtype).eps

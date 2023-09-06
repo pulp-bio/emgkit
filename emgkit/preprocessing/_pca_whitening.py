@@ -32,6 +32,7 @@ from ._abc_whitening import WhiteningModel
 def pca_whitening(
     x: Signal,
     n_pcs: int | str = -1,
+    keep_dim: bool = False,
     solver: str = "svd",
     device: torch.device | None = None,
 ) -> tuple[np.ndarray | torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -46,6 +47,8 @@ def pca_whitening(
         - if set to the string "auto", it will be chosen automatically based on the average of the smallest
         half of eigenvalues/singular values;
         - if zero or negative, all components will be retained.
+    keep_dim : bool, default=False
+        Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
     device : device or None, default=None
@@ -67,7 +70,7 @@ def pca_whitening(
     ValueError
         If the input is not 2D.
     """
-    whiten_model = PCAWhitening(n_pcs, solver, device)
+    whiten_model = PCAWhitening(n_pcs, keep_dim, solver, device)
     x_w = whiten_model.fit_transform(x)
 
     return x_w, whiten_model.mean_vec, whiten_model.white_mtx
@@ -83,6 +86,8 @@ class PCAWhitening(WhiteningModel):
         - if set to the string "auto", it will be chosen automatically based on the average of the smallest
         half of eigenvalues/singular values;
         - if zero or negative, all components will be retained.
+    keep_dim : bool, default=False
+        Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
         The solver used for whitening, either "svd" (default) or "eigh".
     device : device or None, default=None
@@ -90,6 +95,8 @@ class PCAWhitening(WhiteningModel):
 
     Attributes
     ----------
+    _keep_dim : bool
+        Whether to re-project the low-dimensional whitened data to the original dimensionality.
     _solver : str
         The solver used for whitening, either "svd" (default) or "eigh".
     _device : device or None
@@ -99,6 +106,7 @@ class PCAWhitening(WhiteningModel):
     def __init__(
         self,
         n_pcs: int | str = -1,
+        keep_dim: bool = False,
         solver: str = "svd",
         device: torch.device | None = None,
     ) -> None:
@@ -110,6 +118,7 @@ class PCAWhitening(WhiteningModel):
         logging.info(f'Instantiating PCAWhitening using "{solver}" solver.')
 
         self._n_pcs: int | str = n_pcs
+        self._keep_dim = keep_dim
         self._solver: str = solver
         self._device: torch.device | None = device
 
@@ -228,9 +237,10 @@ class PCAWhitening(WhiteningModel):
 
             d_sq = d**2  # singular values are the square root of eigenvalues
             exp_var_ratio = (d_sq / d_sq.sum()).cpu().numpy()
-            d_mtx = torch.diag(1.0 / d) * sqrt(n_samp - 1)
+            d_mtx = torch.diag(1.0 / d) * sqrt(n_samp)
         else:
-            d, e = torch.linalg.eigh(torch.cov(x_tensor))
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+            d, e = torch.linalg.eigh(cov_mtx)
 
             # Improve numerical stability
             eps = torch.finfo(d.dtype).eps
@@ -259,6 +269,9 @@ class PCAWhitening(WhiteningModel):
         self._exp_var_ratio = exp_var_ratio[: self._n_pcs]
 
         self._white_mtx = d_mtx @ e.T
+        if self._keep_dim:  # re-project to original dimensionality
+            self._white_mtx = e @ self._white_mtx
+            logging.info(f"Re-projecting dimensionality to {self._white_mtx.size(0)}.")
         x_w = self._white_mtx @ x_tensor
 
         return x_w.T
