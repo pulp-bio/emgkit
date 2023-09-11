@@ -31,6 +31,8 @@ from matplotlib import patches as mpl_patches
 from matplotlib import pyplot as plt
 
 from ._base import Signal
+from .spike_stats import instantaneous_discharge_rate, smoothed_discharge_rate
+from .utils import sparse_to_dense
 
 # Set Seaborn default theme
 sns.set_theme()
@@ -356,7 +358,7 @@ def plot_ic_spikes(
         layout="constrained",
     )
     axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
-    f.suptitle(f"ICs spike trains")
+    f.suptitle("ICs spike trains")
     f.supxlabel("Time [s]")
     f.supylabel("Amplitude [a.u.]")
 
@@ -432,7 +434,7 @@ def raster_plot(
         Name of the file where the image will be saved to.
     """
     f, ax = plt.subplots(figsize=fig_size, layout="constrained")
-    f.suptitle(f"Spike trains")
+    f.suptitle("Raster plot")
     f.supxlabel("Time [s]")
     ax.yaxis.set_tick_params(labelleft=False)
     ax.set_yticks([])
@@ -443,6 +445,59 @@ def raster_plot(
             y=[i + 1] * spikes_t[mu].size,
             marker="|",
         )
+
+    if file_name is not None:
+        plt.savefig(file_name)
+    else:
+        plt.show()
+
+
+def plot_discharges(
+    spikes_t: dict[str, np.ndarray],
+    sig_len_s: float,
+    fs: float,
+    win_len_s: float = 1.0,
+    fig_size: tuple[int, int] | None = None,
+    file_name: str | None = None,
+) -> None:
+    """Plot the discharge rate of each MU.
+
+    Parameters
+    ----------
+    spikes_t : dict of {str : ndarray}
+        Dictionary containing the discharge times for each MU.
+    sig_len_s : float
+        Length of the signal (in seconds).
+    fs : float
+        Sampling frequency.
+    win_len_s : float, default=1.0
+        Size (in seconds) of the Hanning window.
+    fig_size : tuple of (int, int) or None, default=None
+        Height and width of the plot.
+    file_name : str or None, default=None
+        Name of the file where the image will be saved to.
+    """
+    f, axes = plt.subplots(
+        nrows=len(spikes_t),
+        sharex="all",
+        figsize=fig_size,
+        layout="constrained",
+    )
+    f.suptitle("Discharge rate")
+    f.supxlabel("Time [s]")
+    f.supylabel("Discharge rate [spike/s]")
+
+    # Dense representation
+    spikes_bin = sparse_to_dense(spikes_t, sig_len_s, fs)
+
+    for i, mu in enumerate(spikes_t):
+        smooth_dr = smoothed_discharge_rate(spikes_bin[mu], fs, win_len_s=win_len_s)
+        inst_dr = instantaneous_discharge_rate(spikes_t[mu])
+        axes[i].set_title(mu)
+        axes[i].plot(smooth_dr, label="Smooth")
+        axes[i].plot(inst_dr, ".", label="Instantaneous")
+    handles, labels = axes[-1].get_legend_handles_labels()
+    f.legend(handles, labels, loc="center right")
 
     if file_name is not None:
         plt.savefig(file_name)

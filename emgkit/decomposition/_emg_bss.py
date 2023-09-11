@@ -65,7 +65,7 @@ class EMGBSS:
         Whitening algorithm.
     whiten_kw : dict or None, default=None
         Whitening arguments.
-    bin_alg : {"self._bin_alg", "otsu"}, default="self._bin_alg"
+    bin_alg : {"kmeans", "otsu"}, default="kmeans"
         Binarization algorithm.
     ref_period_ms : float, default=20.0
         Refractory period for spike detection (in ms).
@@ -125,7 +125,7 @@ class EMGBSS:
         seed: int | None = None,
         whiten_alg: str = "pca",
         whiten_kw: dict | None = None,
-        bin_alg: str = "self._bin_alg",
+        bin_alg: str = "kmeans",
         ref_period_ms: float = 20.0,
         dup_perc: float = 0.3,
         dup_tol_ms: float = 0.5,
@@ -146,6 +146,10 @@ class EMGBSS:
             "pca",
             "zca",
         ), f'Whitening algorithm must be either "pca" or "zca": the provided one was {whiten_alg}'
+        assert bin_alg in (
+            "kmeans",
+            "otsu",
+        ), f'Binarization algorithm must be either "kmeans" or "otsu": the provided one was {bin_alg}'
 
         self._fs = fs
         if f_ext_ms == 0:  # disable extension
@@ -288,7 +292,7 @@ class EMGBSS:
             spikes_i = utils.detect_spikes(
                 ics[i],
                 ref_period=self._ref_period,
-                bin_alg="self._bin_alg",
+                bin_alg=self._bin_alg,
                 threshold=self._spike_ths[i].item(),
                 seed=self._prng,
             )[0]
@@ -509,7 +513,7 @@ class EMGBSS:
         spikes, spike_th, sil = utils.detect_spikes(
             ic_i,
             ref_period=self._ref_period,
-            bin_alg="self._bin_alg",
+            bin_alg=self._bin_alg,
             compute_sil=True,
             seed=self._prng,
         )
@@ -527,7 +531,7 @@ class EMGBSS:
             spikes_new, spike_th_new, sil_new = utils.detect_spikes(
                 ic_i,
                 ref_period=self._ref_period,
-                bin_alg="self._bin_alg",
+                bin_alg=self._bin_alg,
                 compute_sil=True,
                 seed=self._prng,
             )
