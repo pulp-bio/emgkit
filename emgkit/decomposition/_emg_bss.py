@@ -45,9 +45,7 @@ class EMGBSS:
         - if negative, it will be set to 1000 / n. of channels.
     n_mu_target : int, default=-1
         Number of target MUs to extract (if zero or negative, it will be set to the number of extended observations).
-    ref_period_ms : float, default=20.0
-        Refractory period for spike detection (in ms).
-    g_name : {"logcosh", "gauss", "kurtosis", "skewness", "rati"}, default="logcosh"
+    g_name : {"skewness", "logcosh", "gauss", "kurtosis", "rati"}, default="skewness"
         Name of the contrast function.
     conv_th : float, default=1e-4
         Threshold for convergence.
@@ -55,16 +53,24 @@ class EMGBSS:
         Maximum n. of iterations.
     sil_th : float, default=0.85
         Minimum silhouette threshold for considering a MU as valid.
+    dr_th : float, default=5.0
+        Minimum discharge rate (in spikes/s) for considering a MU as valid.
     cov_isi_th : float, default=0.5
         Maximum CoV-ISI for considering a MU as valid.
+    device : device or str or None, default=None
+        Torch device.
+    seed : int or None, default=None
+        Seed for the internal PRNG.
+    whiten_alg : {"pca", "zca"}, default="pca"
+        Whitening algorithm.
+    whiten_kw : dict or None, default=None
+        Whitening arguments.
+    ref_period_ms : float, default=20.0
+        Refractory period for spike detection (in ms).
     dup_perc : float, default=0.3
         Minimum percentage of synchronized discharges for considering two MUs as duplicates.
     dup_tol_ms : float, default=0.5
         Tolerance (in ms) for considering two discharges as synchronized.
-    seed : int or None, default=None
-        Seed for the internal PRNG.
-    device : device or str or None, default=None
-        Torch device.
 
     Attributes
     ----------
@@ -72,8 +78,6 @@ class EMGBSS:
         Sampling frequency of the signal.
     _n_mu_target : int
         Number of target MUs to extract.
-    _ref_period : float
-        Refractory period for spike detection.
     _g_func : ContrastFunction
         Contrast function.
     _conv_th : float
@@ -84,14 +88,22 @@ class EMGBSS:
         Minimum silhouette threshold for considering a MU as valid.
     _cov_isi_th : float
         Maximum CoV-ISI for considering a MU as valid.
+    _dr_th : float
+        Minimum discharge rate (in spikes/s) for considering a MU as valid.
+    _device : device or None
+        Torch device.
+    _prng : Generator
+        Actual PRNG.
+    _whiten_alg : str
+        Whitening algorithm.
+    _whiten_kw : dict
+        Whitening arguments.
+    _ref_period : float
+        Refractory period for spike detection.
     _dup_perc : float
         Minimum percentage of synchronized discharges for considering two MUs as duplicates.
     _dup_tol_ms : float
         Tolerance (in ms) for considering two discharges as synchronized.
-    _prng : Generator
-        Actual PRNG.
-    _device : device or None
-        Torch device.
     """
 
     def __init__(
@@ -99,61 +111,70 @@ class EMGBSS:
         fs: float,
         f_ext_ms: float = -1,
         n_mu_target: int = -1,
-        ref_period_ms: float = 20.0,
-        g_name: str = "logcosh",
+        g_name: str = "skewness",
         conv_th: float = 1e-4,
         max_iter: int = 100,
         sil_th: float = 0.85,
         cov_isi_th: float = 0.5,
+        dr_th: float = 5.0,
+        device: torch.device | str | None = None,
+        seed: int | None = None,
+        whiten_alg: str = "pca",
+        whiten_kw: dict | None = None,
+        ref_period_ms: float = 20.0,
         dup_perc: float = 0.3,
         dup_tol_ms: float = 0.5,
-        seed: int | None = None,
-        device: torch.device | str | None = None,
     ):
         assert g_name in (
+            "skewness",
             "logcosh",
             "gauss",
             "kurtosis",
-            "skewness",
             "rati",
         ), (
-            'Contrast function can be either "logcosh", "gauss", "kurtosis", "skewness" or "rati": '
+            'Contrast function can be either "skewness", "logcosh", "gauss", "kurtosis" or "rati": '
             f'the provided one was "{g_name}".'
         )
         assert conv_th > 0, "Convergence threshold must be positive."
         assert max_iter > 0, "The maximum n. of iterations must be positive."
+        assert whiten_alg in (
+            "pca",
+            "zca",
+        ), f'Whitening algorithm must be either "pca" or "zca": the provided one was {whiten_alg}'
 
-        self._fs: float = fs
-        self._n_mu_target: int = n_mu_target
-        self._ref_period: int = int(round(ref_period_ms / 1000 * fs))
+        self._fs = fs
+        if f_ext_ms == 0:  # disable extension
+            self._f_ext = 1
+        elif f_ext_ms < 0:  # apply heuristic later
+            self._f_ext = int(f_ext_ms)
+        else:  # convert from ms to samples
+            self._f_ext = int(round(f_ext_ms / 1000 * fs))
+        self._n_mu_target = n_mu_target
         g_dict = {
+            "skewness": cf.skewness,
             "logcosh": cf.logcosh,
             "gauss": cf.gauss,
             "kurtosis": cf.kurtosis,
-            "skewness": cf.skewness,
             "rati": cf.rati,
         }
-        self._g_func: cf.ContrastFunction = g_dict[g_name]
-        self._conv_th: float = conv_th
-        self._max_iter: int = max_iter
-        self._sil_th: float = sil_th
-        self._cov_isi_th: float = cov_isi_th
-        self._dup_perc: float = dup_perc
-        self._dup_tol_ms: float = dup_tol_ms
-        self._prng: np.random.Generator = np.random.default_rng(seed)
-        self._device: torch.device | None = (
-            torch.device(device) if isinstance(device, str) else device
-        )
-
-        if f_ext_ms == 0:  # disable extension
-            self._f_ext: int = 1
-        elif f_ext_ms < 0:  # apply heuristic later
-            self._f_ext: int = int(f_ext_ms)
-        else:  # convert from ms to samples
-            self._f_ext: int = int(round(f_ext_ms / 1000 * fs))
+        self._g_func = g_dict[g_name]
+        self._conv_th = conv_th
+        self._max_iter = max_iter
+        self._sil_th = sil_th
+        self._cov_isi_th = cov_isi_th
+        self._dr_th = dr_th
+        self._device = torch.device(device) if isinstance(device, str) else device
+        self._prng = np.random.default_rng(seed)
 
         if seed is not None:
             torch.manual_seed(seed)
+
+        self._whiten_alg = whiten_alg
+        self._whiten_kw = {} if whiten_kw is None else whiten_kw
+        self._whiten_kw["device"] = self._device
+        self._ref_period = int(round(ref_period_ms / 1000 * fs))
+        self._dup_perc = dup_perc
+        self._dup_tol_ms = dup_tol_ms
 
         self._mean_vec: torch.Tensor | None = None
         self._white_mtx: torch.Tensor | None = None
@@ -261,7 +282,7 @@ class EMGBSS:
             spikes_i = utils.detect_spikes(
                 ics[i],
                 ref_period=self._ref_period,
-                bin_alg="kmeans",
+                bin_alg="otsu",
                 threshold=self._spike_ths[i].item(),
                 seed=self._prng,
             )[0]
@@ -291,36 +312,44 @@ class EMGBSS:
         # 1. Extension
         logging.info(f"Number of channels before extension: {n_ch}")
         emg_ext = preprocessing.extend_signal(emg_array, self._f_ext)
-        n_samp = emg_ext.shape[0]
-        logging.info(f"Number of channels after extension: {emg_ext.shape[1]}")
+        n_samp, n_ch_ext = emg_ext.shape
+        logging.info(f"Number of channels after extension: {n_ch_ext}")
 
         # 2. Whitening
-        emg_white, self._mean_vec, self._white_mtx = preprocessing.zca_whitening(
-            emg_ext, device=self._device
-        )
+        if self._whiten_alg == "pca":
+            emg_white, self._mean_vec, self._white_mtx = preprocessing.pca_whitening(
+                emg_ext, **self._whiten_kw
+            )
+        else:
+            emg_white, self._mean_vec, self._white_mtx = preprocessing.zca_whitening(
+                emg_ext, **self._whiten_kw
+            )
         emg_white = emg_white.T
+        n_ch_w = emg_white.size(0)
 
         if self._n_mu_target <= 0:
-            self._n_mu_target = emg_white.size(0)
+            self._n_mu_target = n_ch_w
 
         # 3. ICA
-        self._sep_mtx = torch.zeros(
-            0, emg_white.size(0), dtype=emg_white.dtype, device=self._device
+        sep_mtx = torch.zeros(
+            self._n_mu_target,
+            n_ch_w,
+            dtype=emg_white.dtype,
+            device=self._device,
         )
-        self._spike_ths = np.zeros(shape=0, dtype=emg_array.dtype)
-        w_init = self._initialize_weights(emg_white)
-        ics = torch.zeros(0, n_samp, dtype=emg_white.dtype, device=self._device)
-        spikes_t = {}
+        spike_ths = np.zeros(shape=self._n_mu_target, dtype=emg_array.dtype)
+        ics = torch.zeros(
+            self._n_mu_target,
+            n_samp,
+            dtype=emg_white.dtype,
+            device=self._device,
+        )
+        spikes_t = []
         sil_scores = []
-        idx = 0
+        w_init = self._initialize_weights(emg_white)
         for i in range(self._n_mu_target):
             logging.info(f"----- IC {i + 1} -----")
-
-            w_i, converged = self._fast_ica_iter(emg_white, w_i_init=w_init[i])
-            if not converged:
-                logging.info("FastICA didn't converge, reinitializing...")
-                continue
-
+            w_i = self._fast_ica_iter(emg_white, sep_mtx, w_i_init=w_init[i])
             # Solve sign uncertainty
             ic_i = w_i @ emg_white
             if (ic_i**3).mean() < 0:
@@ -330,70 +359,86 @@ class EMGBSS:
             w_i, spikes_i, spike_th_i, sil = self._cov_isi_improvement(
                 emg_white, w_i=w_i
             )
-            spikes_t_i = spikes_i / self._fs
-            if w_i is None:
-                logging.info("IC improvement iteration failed, skipping IC.")
-                continue
-
-            if sil <= self._sil_th:
-                logging.info(
-                    f"SIL below threshold (SIL = {sil:.3f} <= {self._sil_th:.3f}), skipping IC."
-                )
-                continue
-
-            cov_isi = spike_stats.cov_isi(spikes_t_i)
-            if cov_isi >= self._cov_isi_th:
-                logging.info(
-                    f"CoV-ISI above threshold (CoV-ISI = {cov_isi:.3f} >= {self._cov_isi_th:.3f}), skipping IC."
-                )
-                continue
 
             # Save separation vector and spike/noise threshold
-            self._sep_mtx = torch.vstack((self._sep_mtx, w_i))
-            self._spike_ths = np.append(self._spike_ths, spike_th_i)
-            logging.info(f"SIL = {sil:.3f}")
-            logging.info(f"CoV-ISI = {cov_isi:.2%}")
-            logging.info(f"-> MU accepted (n. of MUs: {self._sep_mtx.shape[0]}).")
-
+            sep_mtx[i] = w_i
+            spike_ths[i] = spike_th_i
             # Save current IC, discharge times and SIL
-            ic_i = w_i @ emg_white
-            ics = torch.vstack((ics, ic_i))
-            spikes_t[f"MU{idx}"] = spikes_t_i
-            sil_scores.append((idx, sil))
-            idx += 1
+            ics[i] = w_i @ emg_white
+            spikes_t.append(spikes_i / self._fs)
+            sil_scores.append(sil)
 
-        logging.info(f"Extracted {len(spikes_t)} MUs before replicas removal.")
+        # 4. Post-processing
+        # 4.1. SIL, CoV-ISI and DR thresholding
+        idx_to_keep = []
+        cov_isi_scores = []
+        for i in range(self._n_mu_target):
+            # Check SIL
+            sil = sil_scores[i]
+            if np.isnan(sil) or sil <= self._sil_th:
+                logging.info(
+                    f"{i}-th IC: SIL below threshold (SIL = {sil:.3f} <= {self._sil_th:.3f}) -> skipped."
+                )
+                continue
 
-        # 5. Duplicates removal
+            # Check CoV-ISI
+            cov_isi = spike_stats.cov_isi(spikes_t[i])
+            if np.isnan(cov_isi) or cov_isi >= self._cov_isi_th:
+                logging.info(
+                    f"{i}-th IC: CoV-ISI above threshold (CoV-ISI = {cov_isi:.2%} >= {self._cov_isi_th:.2%})"
+                    f" -> skipped."
+                )
+                continue
+
+            # Check discharge rate
+            avg_dr = spike_stats.instantaneous_discharge_rate(spikes_t[i]).mean()
+            if avg_dr <= self._dr_th:
+                logging.info(
+                    f"{i}-th IC: discharge rate below threshold (DR = {avg_dr:.3f} <= {self._dr_th:.3f})"
+                    f" -> skipped."
+                )
+                continue
+
+            logging.info(
+                f"{i}-th IC: SIL = {sil:.3f}, CoV-ISI = {cov_isi:.2%} -> accepted."
+            )
+            cov_isi_scores.append(cov_isi)
+            idx_to_keep.append(i)
+        sep_mtx = sep_mtx[idx_to_keep]
+        spike_ths = spike_ths[idx_to_keep]
+        ics = ics[idx_to_keep]
+        spikes_t = {f"MU{i}": spikes_t[idx] for i, idx in enumerate(idx_to_keep)}
+        cov_isi_scores = {i: cov_isi for i, cov_isi in enumerate(cov_isi_scores)}
+
+        logging.info(f"Extracted {len(spikes_t)} MUs after post-processing.")
+
+        # 4.2. Replicas removal
         logging.info("Looking for delayed replicas...")
         ics_bin = utils.sparse_to_dense(spikes_t, n_samp / self._fs, self._fs)
         duplicate_mus = utils.find_replicas(
             ics_bin, fs=self._fs, tol_ms=self._dup_tol_ms, min_perc=self._dup_perc
         )
-        mus_to_remove = []
+        idx_to_keep = list(range(len(spikes_t)))
         for main_mu, dup_mus in duplicate_mus.items():
             # Unify duplicate MUs
             dup_mus = [main_mu] + dup_mus
             dup_str = ", ".join([f"{mu}" for mu in dup_mus])
             logging.info(f"Found group of duplicate MUs: {dup_str}.")
 
-            # Keep only the MU with the highest SIL
-            sil_scores_dup = list(filter(lambda t: t[0] in dup_mus, sil_scores))
-            mu_keep = max(sil_scores_dup, key=lambda t: t[1])
-            logging.info(f"Keeping MU {mu_keep[0]} (SIL = {mu_keep[1]:.3f}).")
+            # Keep only the MU with the lowest CoV-ISI
+            cov_isi_dup = {k: v for k, v in cov_isi_scores.items() if k in dup_mus}
+            mu_keep = min(cov_isi_dup, key=lambda k: cov_isi_dup[k])
+            logging.info(
+                f"Keeping MU {mu_keep} (CoV-ISI = {cov_isi_dup[mu_keep]:.2%})."
+            )
 
             # Mark duplicates
-            dup_mus.remove(mu_keep[0])
-            mus_to_remove.extend(dup_mus)
-        mus_to_remove = set(mus_to_remove)
-        # Remove duplicates
-        mus_to_keep = {i for i in range(len(spikes_t))}
-        mus_to_keep -= mus_to_remove
-        mus_to_keep = list(mus_to_keep)
-        self._sep_mtx = self._sep_mtx[mus_to_keep]
-        self._spike_ths = self._spike_ths[mus_to_keep]
-        ics = ics[mus_to_keep]
-        spikes_t = {f"MU{i}": spikes_t[f"MU{k}"] for i, k in enumerate(mus_to_keep)}
+            dup_mus.remove(mu_keep)
+            idx_to_keep = [i for i in idx_to_keep if i not in dup_mus]
+        self._sep_mtx = sep_mtx[idx_to_keep]
+        self._spike_ths = spike_ths[idx_to_keep]
+        ics = ics[idx_to_keep]
+        spikes_t = {f"MU{i}": spikes_t[f"MU{k}"] for i, k in enumerate(idx_to_keep)}
         n_mu = len(spikes_t)
 
         logging.info(f"Extracted {n_mu} MUs after replicas removal.")
@@ -417,73 +462,66 @@ class EMGBSS:
     def _initialize_weights(self, emg_white: torch.Tensor) -> torch.Tensor:
         """Initialize separation vectors."""
 
-        gamma = (emg_white**2).sum(dim=0)  # activation index
+        gamma = emg_white.sum(dim=0) ** 2  # activation index
         w_init_idx = torch.topk(gamma, k=self._n_mu_target).indices
         return emg_white[:, w_init_idx].T
 
     def _fast_ica_iter(
-        self, x_w: torch.Tensor, w_i_init: torch.Tensor
-    ) -> tuple[torch.Tensor, bool]:
+        self, x_w: torch.Tensor, sep_mtx: torch.Tensor, w_i_init: torch.Tensor
+    ) -> torch.Tensor:
         """FastICA iteration."""
         w_i = w_i_init
         w_i /= torch.linalg.norm(w_i)
+        decorr_mtx = sep_mtx.T @ sep_mtx
 
         iter_idx = 1
-        converged = False
         while iter_idx <= self._max_iter:
             g_res = self._g_func(w_i @ x_w)
             w_i_new = (x_w * g_res.g1_u).mean(dim=1) - g_res.g2_u.mean() * w_i
-            w_i_new -= (
-                w_i_new @ self._sep_mtx.T @ self._sep_mtx
-            )  # Gram-Schmidt decorrelation
+            w_i_new -= w_i_new @ decorr_mtx  # Gram-Schmidt decorrelation
             w_i_new /= torch.linalg.norm(w_i_new)
 
             distance = 1 - abs((w_i_new @ w_i).item())
-            logging.info(f"FastICA iteration {iter_idx}: {distance:.3e}.")
-
             w_i = w_i_new
-
             if distance < self._conv_th:
-                converged = True
                 logging.info(
                     f"FastICA converged after {iter_idx} iterations, the distance is: {distance:.3e}."
                 )
                 break
-
             iter_idx += 1
 
-        return w_i, converged
+        return w_i
 
     def _cov_isi_improvement(
         self,
         emg_white: torch.Tensor,
         w_i: torch.Tensor,
-    ) -> tuple[torch.Tensor | None, np.ndarray, float, float]:
+    ) -> tuple[torch.Tensor, np.ndarray, float, float]:
         """CoV-ISI improvement iteration."""
 
         ic_i = w_i @ emg_white
         spikes, spike_th, sil = utils.detect_spikes(
             ic_i,
             ref_period=self._ref_period,
-            bin_alg="kmeans",
+            bin_alg="otsu",
             compute_sil=True,
             seed=self._prng,
         )
         cov_isi = spike_stats.cov_isi(spikes / self._fs)
         iter_idx = 0
         if math.isnan(cov_isi):
-            logging.info("Spike detection failed, aborting.")
-            return None, spikes, np.nan, np.nan
+            logging.info("Spike detection failed.")
+            return w_i, spikes, np.nan, np.nan
 
         while True:
-            w_i_new = emg_white[:, spikes].mean(dim=1)
+            w_i_new = emg_white[:, spikes].sum(dim=1)
             w_i_new /= torch.linalg.norm(w_i_new)
 
             ic_i = w_i_new @ emg_white
             spikes_new, spike_th_new, sil_new = utils.detect_spikes(
                 ic_i,
                 ref_period=self._ref_period,
-                bin_alg="kmeans",
+                bin_alg="otsu",
                 compute_sil=True,
                 seed=self._prng,
             )
@@ -491,14 +529,12 @@ class EMGBSS:
             iter_idx += 1
 
             if math.isnan(cov_isi_new):
-                logging.info(
-                    f"Spike detection failed after {iter_idx} steps, aborting."
-                )
+                logging.info(f"Spike detection failed after {iter_idx} steps.")
                 break
             if cov_isi_new >= cov_isi:
                 logging.info(
                     f"CoV-ISI increased from {cov_isi:.2%} to {cov_isi_new:.2%} "
-                    f"after {iter_idx} steps, aborting."
+                    f"after {iter_idx} steps."
                 )
                 break
             logging.info(
