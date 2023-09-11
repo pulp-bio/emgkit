@@ -52,7 +52,6 @@ def _plot_signal_complete(
         n_rows,
         n_cols,
         sharex="all",
-        sharey="all",
         squeeze=False,
         figsize=fig_size,
         layout="constrained",
@@ -326,6 +325,51 @@ def plot_waveforms(
         plt.show()
 
 
+def plot_ic_spikes(
+    ics: pd.DataFrame,
+    spikes_t: dict[str, np.ndarray],
+    fig_size: tuple[int, int] | None = None,
+    file_name: str | None = None,
+) -> None:
+    """Plot the given ICs and spikes.
+
+    Parameters
+    ----------
+    ics : DataFrame
+        A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
+    spikes_t : dict of {str : ndarray}
+        Dictionary containing the discharge times for each MU.
+    fig_size : tuple of (int, int) or None, default=None
+        Height and width of the plot.
+    file_name : str or None, default=None
+        Name of the file where the image will be saved to.
+    """
+    assert ics.shape[1] == len(
+        spikes_t
+    ), "The number of ICs must match the number of spike trains."
+
+    f, axes = plt.subplots(
+        nrows=len(spikes_t),
+        sharex="all",
+        squeeze=False,
+        figsize=fig_size,
+        layout="constrained",
+    )
+    axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
+    f.suptitle(f"ICs spike trains")
+    f.supxlabel("Time [s]")
+    f.supylabel("Amplitude [a.u.]")
+
+    for i, mu in enumerate(ics):
+        axes[i].plot(ics[mu])
+        axes[i].plot(spikes_t[mu], ics[mu].loc[spikes_t[mu]], "x")
+
+    if file_name is not None:
+        plt.savefig(file_name)
+    else:
+        plt.show()
+
+
 def plot_correlation(
     s: Signal,
     write_annotations: bool = False,
@@ -364,6 +408,41 @@ def plot_correlation(
         square=True,
         ax=ax,
     )
+
+    if file_name is not None:
+        plt.savefig(file_name)
+    else:
+        plt.show()
+
+
+def raster_plot(
+    spikes_t: dict[str, np.ndarray],
+    fig_size: tuple[int, int] | None = None,
+    file_name: str | None = None,
+) -> None:
+    """Plot a raster plot of the given discharges.
+
+    Parameters
+    ----------
+    spikes_t : dict of {str : ndarray}
+        Dictionary containing the discharge times for each MU.
+    fig_size : tuple of (int, int) or None, default=None
+        Height and width of the plot.
+    file_name : str or None, default=None
+        Name of the file where the image will be saved to.
+    """
+    f, ax = plt.subplots(figsize=fig_size, layout="constrained")
+    f.suptitle(f"Spike trains")
+    f.supxlabel("Time [s]")
+    ax.yaxis.set_tick_params(labelleft=False)
+    ax.set_yticks([])
+
+    for i, mu in enumerate(spikes_t.keys()):
+        ax.scatter(
+            x=spikes_t[mu],
+            y=[i + 1] * spikes_t[mu].size,
+            marker="|",
+        )
 
     if file_name is not None:
         plt.savefig(file_name)

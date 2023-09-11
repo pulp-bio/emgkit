@@ -327,6 +327,7 @@ def detect_spikes(
 def compute_waveforms(
     emg: Signal,
     spikes_t: dict[str, np.ndarray],
+    f_ext: int,
     wf_radius_ms: float,
     fs: float,
 ) -> np.ndarray:
@@ -338,6 +339,8 @@ def compute_waveforms(
         Raw EMG signal with shape (n_samples, n_channels).
     spikes_t : dict of {str : ndarray}
         Dictionary containing the discharge times for each MU.
+    f_ext : int
+        Extension factor (in samples).
     wf_radius_ms : float
         Radius of the waveform (in ms).
     fs : float
@@ -360,6 +363,7 @@ def compute_waveforms(
     for ch, emg_ch in enumerate(emg_array):
         for mu, spikes_t_mu in enumerate(spikes_t.values()):
             spikes_mu = (spikes_t_mu * fs).astype("int32")  # seconds -> samples
+            spikes_mu += f_ext
             spikes_mu = spikes_mu[
                 (spikes_mu >= wf_len) & (spikes_mu <= n_samp - wf_len)
             ]
@@ -369,43 +373,6 @@ def compute_waveforms(
             wfs[ch, mu] = cur_wf.mean(axis=0)
 
     return wfs
-
-
-def slice_by_label(
-    s: Signal,
-    labels: list[tuple[str, int, int]],
-    target_label: str,
-    margin: int = 0,
-) -> list[np.ndarray]:
-    """Given a signal and its range-based labels, return all the contiguous sub-sequences of the signal corresponding
-    to the given target label.
-
-    Parameters
-    ----------
-    s : Signal
-        A signal with shape (n_samples, n_channels).
-    labels : list of tuple of (str, int, int)
-        List containing, for each action block, the label of the action together with the first and the last samples.
-    target_label : str
-        Target label.
-    margin : int
-        Margin of the sub-sequences (in samples).
-
-    Returns
-    -------
-    list of ndarrays
-        List of contiguous sub-sequences corresponding to the target label.
-    """
-
-    # Convert to array
-    s_array = signal_to_array(s, allow_1d=True)
-
-    slice_list = []
-    for label, idx_from, idx_to in labels:
-        if label == target_label:
-            slice_list.append(s_array[idx_from - margin : idx_to + margin])
-
-    return slice_list
 
 
 def sparse_to_dense(
