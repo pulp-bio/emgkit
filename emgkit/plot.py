@@ -82,7 +82,7 @@ def _plot_signal_complete(
         # Get set of unique labels
         label_set = set(map(lambda t: t[0], labels_intervals))
         # Create dictionary label -> color
-        cmap = cm.get_cmap("plasma", len(label_set))
+        cmap = cm.get_cmap("tab20", len(label_set))
         color_dict = {lab: cmap(i) for i, lab in enumerate(label_set)}
         for i, ch_i in enumerate(s_df):
             for label, idx_from, idx_to in labels_intervals:
