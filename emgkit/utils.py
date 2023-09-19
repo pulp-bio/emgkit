@@ -327,7 +327,6 @@ def detect_spikes(
 def compute_waveforms(
     emg: Signal,
     spikes_t: dict[str, np.ndarray],
-    f_ext: int,
     wf_radius_ms: float,
     fs: float,
 ) -> np.ndarray:
@@ -339,8 +338,6 @@ def compute_waveforms(
         Raw EMG signal with shape (n_samples, n_channels).
     spikes_t : dict of {str : ndarray}
         Dictionary containing the discharge times for each MU.
-    f_ext : int
-        Extension factor (in samples).
     wf_radius_ms : float
         Radius of the waveform (in ms).
     fs : float
@@ -363,7 +360,6 @@ def compute_waveforms(
     for ch, emg_ch in enumerate(emg_array):
         for mu, spikes_t_mu in enumerate(spikes_t.values()):
             spikes_mu = (spikes_t_mu * fs).astype("int32")  # seconds -> samples
-            spikes_mu += f_ext
             spikes_mu = spikes_mu[
                 (spikes_mu >= wf_len) & (spikes_mu <= n_samp - wf_len)
             ]
