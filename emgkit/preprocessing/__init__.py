@@ -27,3 +27,16 @@ from ._filtering import (
 )
 from ._pca_whitening import PCAWhitening, pca_whitening
 from ._zca_whitening import ZCAWhitening, zca_whitening
+
+__all__ = [
+    "WhiteningModel",
+    "extend_signal",
+    "bandpass_filter",
+    "bandstop_filter",
+    "highpass_filter",
+    "lowpass_filter",
+    "PCAWhitening",
+    "pca_whitening",
+    "ZCAWhitening",
+    "zca_whitening",
+]

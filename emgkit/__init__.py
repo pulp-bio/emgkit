@@ -1,4 +1,4 @@
-"""This package contains the code to decompose and analyse EMG signals.
+"""Toolkit for processing and analysis of EMG signals.
 
 
 Copyright 2023 Mattia Orlandi
@@ -16,4 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from . import decomposition, ica, plot, preprocessing, spike_stats, utils
+from . import decomposition, ica, plotting, preprocessing, spike_stats, utils
+
+__all__ = ["decomposition", "ica", "plotting", "preprocessing", "spike_stats", "utils"]
