@@ -1,5 +1,4 @@
-"""Functions to load and pre-process the synthetic sEMG dataset used by
-Mohebian et al. in their work (https://doi.org/10.3389/fncom.2019.00014).
+"""Utility functions to load and process specific datasets.
 
 
 Copyright 2023 Mattia Orlandi
@@ -21,12 +20,47 @@ from __future__ import annotations
 
 import glob
 import os
+import struct
 from functools import reduce
 
 import numpy as np
 import pandas as pd
 import scipy.io as sio
 from scipy import signal
+
+
+def load_armband_signal(data_path: str) -> pd.DataFrame:
+    """Load sEMG data acquired using our custom armband.
+
+    Parameters
+    ----------
+    data_path : str
+        Path to the dataset root folder.
+
+    Returns
+    -------
+    DataFrame
+        The sEMG signal with shape (n_samples, n_channels).
+    """
+    fs = 4000
+
+    # Read file
+    with open(data_path, "rb") as f:
+        n_ch = struct.unpack("<I", f.read(4))[0]
+        b_data = bytes(f.read())
+    data = np.frombuffer(b_data, dtype="float32").reshape(-1, n_ch)
+    n_ch -= 1
+    n_samp = data.shape[0]
+
+    # Pack in DataFrame
+    emg = pd.DataFrame(
+        data=data,
+        index=np.arange(n_samp) / fs,
+        columns=[f"Ch{i}" for i in range(n_ch)] + ["Trigger"],
+    )
+    emg["Trigger"] = emg["Trigger"].astype("int32")
+
+    return emg
 
 
 def _band_limited_noise(
@@ -49,7 +83,8 @@ def load_synthetic_signal(
     apply_filter: bool = True,
     seed: int | None = None,
 ) -> list[tuple[pd.DataFrame, dict[str, np.ndarray], float]]:
-    """Load data from the simulated dataset given the MVC value.
+    """Load data from the simulated dataset proposed by Mohebian et al.
+    in their work (https://doi.org/10.3389/fncom.2019.00014).
 
     Parameters
     ----------
@@ -59,9 +94,9 @@ def load_synthetic_signal(
         Effort level as percentage of MVC.
     snr : int or None, default=None
         Amount of noise in the bandwidth of 20-500 Hz to add to the signal.
-    apply_filter: bool, default=True
+    apply_filter : bool, default=True
         Whether the signals should be filtered or not.
-    seed: int or None, default=None
+    seed : int or None, default=None
         Random seed for reproducibility (relevant if snr is not None).
 
     Returns
