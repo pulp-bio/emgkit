@@ -73,12 +73,14 @@ def worker(
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        sys.exit("Usage: python3 convert_to_non_iso DATA_PATH_IN DATA_PATH_OUT")
-    _, data_path_in, data_path_out = sys.argv
+    if len(sys.argv) != 5:
+        sys.exit(
+            "Usage: python3 convert_to_non_iso DATA_PATH_IN DATA_PATH_OUT MVC CYCLE"
+        )
+    _, data_path_in, data_path_out, mvc, cycle = sys.argv
+    mvc, cycle = int(mvc), int(cycle)
 
     min_gamma, max_gamma = 1.0, 1.2
-    cycles = (6, 4, 3)
 
     fs = 4096
     sig_len_s = 16.0
@@ -94,69 +96,61 @@ def main() -> None:
 
     n_cores = os.cpu_count()
 
-    for mvc in tqdm((10, 30, 50)):
-        for s, (emg, gt_spikes_t, _) in enumerate(
-            tqdm(load_synthetic_signal(data_path_in, mvc=mvc, apply_filter=False))
-        ):
-            # Compute waveforms
-            wfs = emgkit.utils.compute_waveforms(emg, gt_spikes_t, wf_radius_ms, fs)
+    for s, (emg, gt_spikes_t, _) in enumerate(
+        tqdm(load_synthetic_signal(data_path_in, mvc=mvc, apply_filter=False))
+    ):
+        # Compute waveforms
+        wfs = emgkit.utils.compute_waveforms(emg, gt_spikes_t, wf_radius_ms, fs)
 
-            # Dense representation of ground-truth spikes
-            gt_spikes_bin = emgkit.utils.sparse_to_dense(
-                gt_spikes_t, sig_len_s, fs
-            ).to_numpy()
-            gt_spikes_bin = np.pad(gt_spikes_bin, pad_width=((0, wf_radius), (0, 0)))
+        # Dense representation of ground-truth spikes
+        gt_spikes_bin = emgkit.utils.sparse_to_dense(
+            gt_spikes_t, sig_len_s, fs
+        ).to_numpy()
+        gt_spikes_bin = np.pad(gt_spikes_bin, pad_width=((0, wf_radius), (0, 0)))
 
-            # Partial worker
-            part_worker = partial(worker, wfs=wfs, t=t_wf)
+        # Partial worker
+        part_worker = partial(worker, wfs=wfs, t=t_wf)
 
-            for cycle in tqdm(cycles):
-                gamma_cycle = signal.sawtooth(2 * np.pi * (t_gamma - stop_iso_s) / cycle, width=0.5)  # type: ignore
-                gamma_cycle = (gamma_cycle + 1) / 2  # rescale to 0-1 range
-                gamma_cycle = (
-                    gamma_cycle * (max_gamma - min_gamma) + min_gamma
-                )  # rescale to gamma range
+        gamma_cycle = signal.sawtooth(2 * np.pi * (t_gamma - stop_iso_s) / cycle, width=0.5)  # type: ignore
+        gamma_cycle = (gamma_cycle + 1) / 2  # rescale to 0-1 range
+        gamma_cycle = (
+            gamma_cycle * (max_gamma - min_gamma) + min_gamma
+        )  # rescale to gamma range
 
-                # Keep first 4 seconds isometric
-                emg_new = np.zeros_like(emg.to_numpy())
-                for c in range(wfs.shape[0]):  # channels
-                    for m in range(wfs.shape[1]):  # MUs
-                        emg_new[:stop_iso, c] += np.convolve(
-                            gt_spikes_bin[: stop_iso + wf_radius, m], wfs[c, m], "same"
-                        )[:stop_iso]
+        # Keep first seconds isometric
+        emg_new = np.zeros_like(emg.to_numpy())
+        for c in range(wfs.shape[0]):  # channels
+            for m in range(wfs.shape[1]):  # MUs
+                emg_new[:stop_iso, c] += np.convolve(
+                    gt_spikes_bin[: stop_iso + wf_radius, m], wfs[c, m], "same"
+                )[:stop_iso]
 
-                # Compute new signal in parallel
-                results = Parallel(n_jobs=n_cores)(
-                    delayed(part_worker)(
-                        gamma,
-                        gt_spikes_bin[
-                            stop_iso + i - wf_radius : stop_iso + i + wf_radius + 1
-                        ],
-                    )
-                    for i, gamma in enumerate(tqdm(gamma_cycle))
-                )
+        # Compute new signal in parallel
+        results = Parallel(n_jobs=n_cores)(
+            delayed(part_worker)(
+                gamma,
+                gt_spikes_bin[stop_iso + i - wf_radius : stop_iso + i + wf_radius + 1],
+            )
+            for i, gamma in enumerate(tqdm(gamma_cycle))
+        )
+        tmp = np.stack(results, axis=0)  # type: ignore
+        emg_new[stop_iso:, :] = tmp
 
-                tmp = np.stack(results, axis=0)  # type: ignore
-                emg_new[stop_iso:, :] = tmp
-
-                # Convert both EMG and spikes to DataFrames
-                emg_new_df = pd.DataFrame(
-                    data=emg_new,
-                    index=emg.index,
-                    columns=emg.columns,
-                )
-                gt_spikes_t_df = pd.DataFrame(
-                    data=[
-                        (mu, dt) for mu, spikes in gt_spikes_t.items() for dt in spikes
-                    ],
-                    columns=["MU index", "Discharge time"],
-                )
-                # Save to H5 file
-                out_file = os.path.join(data_path_out, f"MVC{mvc}S{s}C{cycle}.h5")
-                emg_new_df.to_hdf(out_file, "EMG", format="table")
-                gt_spikes_t_df.to_hdf(out_file, "Spikes", format="table", mode="a")
+        # Convert both EMG and spikes to DataFrames
+        emg_new_df = pd.DataFrame(
+            data=emg_new,
+            index=emg.index,
+            columns=emg.columns,
+        )
+        gt_spikes_t_df = pd.DataFrame(
+            data=[(mu, dt) for mu, spikes in gt_spikes_t.items() for dt in spikes],
+            columns=["MU index", "Discharge time"],
+        )
+        # Save to H5 file
+        out_file = os.path.join(data_path_out, f"MVC{mvc}S{s}C{cycle}.h5")
+        emg_new_df.to_hdf(out_file, "EMG", format="table")
+        gt_spikes_t_df.to_hdf(out_file, "Spikes", format="table", mode="a")
 
 
 if __name__ == "__main__":
     main()
-
