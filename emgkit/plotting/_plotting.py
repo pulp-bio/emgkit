@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from matplotlib import cm
+from matplotlib import colormaps as cm
 from matplotlib import patches as mpl_patches
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
@@ -83,7 +83,7 @@ def _plot_signal_complete(
         # Get set of unique labels
         label_set = set(map(lambda t: t[0], labels_intervals))
         # Create dictionary label -> color
-        cmap = cm.get_cmap("tab20", len(label_set))
+        cmap = cm["tab20"].resampled(len(label_set))
         color_dict = {lab: cmap(i) for i, lab in enumerate(label_set)}
         for i, ch_i in enumerate(s_df):
             for label, idx_from, idx_to in labels_intervals:
@@ -148,7 +148,7 @@ def _plot_signal_compact(
         fig.supxlabel(x_label)
 
         # Create dictionary label -> color
-        label_cmap = cm.get_cmap("viridis", labels.nunique())
+        label_cmap = cm["viridis"].resampled(labels.nunique())
         color_dict = {lab: label_cmap(i) for i, lab in enumerate(labels.unique())}
         # Add legend
         fig.legend(
