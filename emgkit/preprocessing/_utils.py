@@ -38,7 +38,7 @@ def eigendecomposition(x_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tens
     Tensor:
         1D Tensor of eigenvalues sorted in descending order.
     """
-    n_samp = x_tensor.size(dim=1)
+    n_samp = x_tensor.size(1)
     cov_mtx = x_tensor @ x_tensor.T / n_samp
     d, e = torch.linalg.eigh(cov_mtx)
 

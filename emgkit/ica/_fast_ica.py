@@ -330,7 +330,7 @@ class FastICA(ICA):
             )
         x_tensor = x_tensor.T
 
-        n_ch = x_tensor.size(dim=0)
+        n_ch = x_tensor.size(0)
         if self._n_ics == 0:
             self._n_ics = n_ch
         assert (

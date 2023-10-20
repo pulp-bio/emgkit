@@ -35,7 +35,7 @@ def pca_whitening(
     keep_dim: bool = False,
     solver: str = "svd",
     device: torch.device | str | None = None,
-) -> tuple[np.ndarray | torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Function performing PCA whitening.
 
     Parameters

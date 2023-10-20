@@ -186,35 +186,30 @@ class EMGBSS:
         self._dup_perc = dup_perc
         self._dup_tol_ms = dup_tol_ms
 
-        self._mean_vec: torch.Tensor | None = None
-        self._white_mtx: torch.Tensor | None = None
-        self._sep_mtx: torch.Tensor | None = None
-        self._spike_ths: np.ndarray | None = None
-
     @property
-    def mean_vec(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated mean vector."""
+    def mean_vec(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated mean vector."""
         return self._mean_vec
 
     @property
-    def white_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated whitening matrix."""
+    def white_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated whitening matrix."""
         return self._white_mtx
 
     @property
-    def sep_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated separation matrix."""
+    def sep_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated separation matrix."""
         return self._sep_mtx
 
     @property
-    def spike_ths(self) -> np.ndarray | None:
-        """ndarray or None: Property for getting the estimated separation matrix."""
+    def spike_ths(self) -> np.ndarray:
+        """ndarray: Property for getting the estimated separation matrix."""
         return self._spike_ths
 
     @property
     def n_mu(self) -> int:
         """int: Property for getting the number of identified motor units."""
-        return self._sep_mtx.size(dim=0) if self._sep_mtx is not None else -1
+        return self._sep_mtx.size(0) if self._sep_mtx is not None else -1
 
     @property
     def f_ext(self) -> int:
@@ -300,7 +295,7 @@ class EMGBSS:
 
         # Pack results in a DataFrame
         ics = pd.DataFrame(
-            data=ics.cpu().T,
+            data=ics.T.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
             columns=[f"MU{i}" for i in range(n_mu)],
         )
@@ -455,7 +450,7 @@ class EMGBSS:
 
         # Pack results in a DataFrame
         ics = pd.DataFrame(
-            data=ics.cpu().T,
+            data=ics.T.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
             columns=[f"MU{i}" for i in range(n_mu)],
         )
