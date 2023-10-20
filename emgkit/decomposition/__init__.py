@@ -17,3 +17,5 @@ limitations under the License.
 """
 
 from ._emg_bss import EMGBSS
+
+__all__ = ["EMGBSS"]

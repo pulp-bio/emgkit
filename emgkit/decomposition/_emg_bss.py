@@ -41,8 +41,9 @@ class EMGBSS:
         Sampling frequency of the signal.
     f_ext_ms : float, default=-1
         Extension factor for the signal (in ms):
-        - if zero, the signal won't be extended;
-        - if negative, it will be set to 1000 / n. of channels.
+        - if set to the string "auto", it will be set to 1000 / n. of channels;
+        - if set to the string "none", the signal won't be extended;
+        - otherwise, it will be set to the given value.
     n_mu_target : int, default=-1
         Number of target MUs to extract (if zero or negative, it will be set to the number of extended observations).
     g_name : {"skewness", "logcosh", "gauss", "kurtosis", "rati"}, default="skewness"
@@ -113,7 +114,7 @@ class EMGBSS:
     def __init__(
         self,
         fs: float,
-        f_ext_ms: float = -1,
+        f_ext_ms: float | str = "auto",
         n_mu_target: int = -1,
         g_name: str = "skewness",
         conv_th: float = 1e-4,
@@ -130,6 +131,9 @@ class EMGBSS:
         dup_perc: float = 0.3,
         dup_tol_ms: float = 0.5,
     ):
+        assert (isinstance(f_ext_ms, float) and f_ext_ms > 0) or (
+            isinstance(f_ext_ms, str) and f_ext_ms in ("auto", "none")
+        ), 'f_ext_ms must be either a positive float, "auto" or "none".'
         assert g_name in (
             "skewness",
             "logcosh",
@@ -152,12 +156,15 @@ class EMGBSS:
         ), f'Binarization algorithm must be either "kmeans" or "otsu": the provided one was {bin_alg}'
 
         self._fs = fs
-        if f_ext_ms == 0:  # disable extension
+
+        # Map "auto" -> -1 and "none" -> 1
+        if f_ext_ms == "auto":
+            self._f_ext = -1
+        elif f_ext_ms == "none":
             self._f_ext = 1
-        elif f_ext_ms < 0:  # apply heuristic later
-            self._f_ext = int(f_ext_ms)
-        else:  # convert from ms to samples
+        else:
             self._f_ext = int(round(f_ext_ms / 1000 * fs))
+
         self._n_mu_target = n_mu_target
         g_dict = {
             "skewness": cf.skewness,
