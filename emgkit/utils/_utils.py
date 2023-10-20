@@ -18,15 +18,49 @@ limitations under the License.
 
 from __future__ import annotations
 
+import warnings
 from math import ceil
 
 import numpy as np
 import pandas as pd
+import torch
 from scipy import signal
 from scipy.cluster.vq import kmeans2
 from sklearn.metrics import silhouette_score
 
 from .._base import Signal, signal_to_array
+
+
+def eigendecomposition(x_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Perform eigendecomposition of the covariance matrix of a given Tensor.
+
+    Parameters
+    ----------
+    x_tensor: Tensor
+        Input Tensor with shape (n_channels, n_samples).
+
+    Returns
+    -------
+    Tensor:
+        2D Tensor of eigenvectors sorted by the corresponding eigenvalue in descending order.
+    Tensor:
+        1D Tensor of eigenvalues sorted in descending order.
+    """
+    n_samp = x_tensor.size(1)
+    cov_mtx = x_tensor @ x_tensor.T / n_samp
+    d, e = torch.linalg.eigh(cov_mtx)
+
+    # Improve numerical stability
+    eps = torch.finfo(d.dtype).eps
+    degenerate_idx = torch.lt(d, eps).nonzero()
+    if torch.any(degenerate_idx):
+        warnings.warn(f"Some eigenvalues are smaller than epsilon ({eps:.3e}).")
+    d[degenerate_idx] = eps
+
+    sort_idx = torch.argsort(d, descending=True)
+    d, e = d[sort_idx], e[:, sort_idx]
+
+    return e, d
 
 
 def power_spectrum(x: Signal, fs: float) -> pd.DataFrame:

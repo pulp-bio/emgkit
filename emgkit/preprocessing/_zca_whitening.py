@@ -24,8 +24,8 @@ from math import sqrt
 import torch
 
 from .._base import Signal, signal_to_tensor
+from ..utils import eigendecomposition
 from ._abc_whitening import WhiteningModel
-from ._utils import eigendecomposition
 
 
 def zca_whitening(

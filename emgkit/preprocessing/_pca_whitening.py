@@ -25,8 +25,8 @@ import numpy as np
 import torch
 
 from .._base import Signal, signal_to_tensor
+from ..utils import eigendecomposition
 from ._abc_whitening import WhiteningModel
-from ._utils import eigendecomposition
 
 
 def pca_whitening(
@@ -107,7 +107,7 @@ class PCAWhitening(WhiteningModel):
 
     def __init__(
         self,
-        n_pcs: int | str = -1,
+        n_pcs: int | str = "auto",
         keep_dim: bool = False,
         solver: str = "svd",
         device: torch.device | str | None = None,
