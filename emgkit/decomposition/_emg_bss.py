@@ -44,8 +44,10 @@ class EMGBSS:
         - if set to the string "auto", it will be set to 1000 / n. of channels;
         - if set to the string "none", the signal won't be extended;
         - otherwise, it will be set to the given value.
-    n_mu_target : int, default=-1
-        Number of target MUs to extract (if zero or negative, it will be set to the number of extended observations).
+    n_mu_target : int or str, default="all"
+        Number of target MUs to extract:
+        - if set to the string "all", it will be set to the number of extended observations;
+        - otherwise, it will be set to the given number.
     g_name : {"skewness", "logcosh", "gauss", "kurtosis", "rati"}, default="skewness"
         Name of the contrast function.
     conv_th : float, default=1e-4
@@ -115,7 +117,7 @@ class EMGBSS:
         self,
         fs: float,
         f_ext_ms: float | str = "auto",
-        n_mu_target: int = -1,
+        n_mu_target: int | str = "all",
         g_name: str = "skewness",
         conv_th: float = 1e-4,
         max_iter: int = 100,
@@ -134,6 +136,9 @@ class EMGBSS:
         assert (isinstance(f_ext_ms, float) and f_ext_ms > 0) or (
             isinstance(f_ext_ms, str) and f_ext_ms in ("auto", "none")
         ), 'f_ext_ms must be either a positive float, "auto" or "none".'
+        assert (isinstance(n_mu_target, int) and n_mu_target > 0) or (
+            isinstance(n_mu_target, str) and n_mu_target == "all"
+        ), 'n_mu_target must be either a positive integer or "all".'
         assert g_name in (
             "skewness",
             "logcosh",
@@ -165,7 +170,8 @@ class EMGBSS:
         else:
             self._f_ext = int(round(f_ext_ms / 1000 * fs))
 
-        self._n_mu_target = n_mu_target
+        # Map "all" -> 0
+        self._n_mu_target = 0 if n_mu_target == "all" else n_mu_target
         g_dict = {
             "skewness": cf.skewness,
             "logcosh": cf.logcosh,
