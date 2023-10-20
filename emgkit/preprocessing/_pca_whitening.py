@@ -31,7 +31,7 @@ from ._utils import eigendecomposition
 
 def pca_whitening(
     x: Signal,
-    n_pcs: int | str = -1,
+    n_pcs: int | str = "auto",
     keep_dim: bool = False,
     solver: str = "svd",
     device: torch.device | str | None = None,
@@ -42,11 +42,12 @@ def pca_whitening(
     ----------
     x : Signal
         A signal with shape (n_samples, n_channels).
-    n_pcs : int or str, default=-1
+    n_pcs : int or str, default="auto"
         Number of components to be selected:
         - if set to the string "auto", it will be chosen automatically based on the average of the smallest
         half of eigenvalues/singular values;
-        - if zero or negative, all components will be retained.
+        - if set to the string "all", all components will be retained;
+        - otherwise, it will be set to the given number.
     keep_dim : bool, default=False
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
@@ -81,12 +82,12 @@ class PCAWhitening(WhiteningModel):
 
     Parameters
     ----------
-    n_pcs : int or str, default=-1
+    n_pcs : int or str, default="auto"
         Number of components to be selected:
-        - if set to the string "all", all components will be retained;
         - if set to the string "auto", it will be chosen automatically based on the average of the smallest
         half of eigenvalues/singular values;
-        - otherwise, the given number of components will be retained.
+        - if set to the string "all", all components will be retained;
+        - otherwise, it will be set to the given number.
     keep_dim : bool, default=False
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
@@ -111,9 +112,9 @@ class PCAWhitening(WhiteningModel):
         solver: str = "svd",
         device: torch.device | str | None = None,
     ) -> None:
-        assert isinstance(n_pcs, int) or (
-            isinstance(n_pcs, str) and n_pcs == "auto"
-        ), 'n_pcs must be either an integer or "auto".'
+        assert (isinstance(n_pcs, int) and n_pcs > 0) or (
+            isinstance(n_pcs, str) and n_pcs in ("auto", "all")
+        ), 'n_pcs must be either a positive integer, "auto" or "all".'
         assert solver in ("svd", "eigh"), 'The solver must be either "svd" or "eigh".'
 
         logging.info(f'Instantiating PCAWhitening using "{solver}" solver.')
@@ -253,8 +254,12 @@ class PCAWhitening(WhiteningModel):
         if self._n_pcs < 0:  # automatic selection
             rank_th = d[d.size(0) // 2 :].mean()
             self._n_pcs = int(torch.sum(torch.ge(d, rank_th)).item())
-        elif self._n_pcs <= 0:
+        elif self._n_pcs == 0:
             self._n_pcs = n_ch
+        assert (
+            n_ch >= self._n_pcs
+        ), f"Too few channels ({n_ch}) with respect to target components ({self._n_pcs})."
+
         logging.info(f"Reducing dimension of data from {n_ch} to {self._n_pcs}.")
         d_mtx = d_mtx[: self._n_pcs, : self._n_pcs]
         e = e[:, : self._n_pcs]

@@ -59,7 +59,7 @@ def _exp1(u: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
 
 def efica(
     x: Signal,
-    n_ics: int = -1,
+    n_ics: int | str = "all",
     whiten_alg: str = "zca",
     g_name: str = "logcosh",
     conv_th: float = 1e-4,
@@ -77,8 +77,10 @@ def efica(
     ----------
     x : Signal
         A signal with shape (n_samples, n_channels).
-    n_ics : int, default=-1
-        Number of components to estimate (if zero or negative, it will be set to the number of channels in the signal).
+    n_ics : int or str, default="all"
+        Number of components to estimate:
+        - if set to the string "all", it will be set to the number of channels in the signal;
+        - otherwise, it will be set to the given number.
     whiten_alg : {"zca", "pca", "none"}, default="zca"
         Whitening algorithm.
     g_name : {"logcosh", "gauss", "kurtosis", "rati", "exp1"}, default="logcosh"
@@ -136,8 +138,10 @@ class EFICA(ICA):
 
     Parameters
     ----------
-    n_ics : int, default=-1
-        Number of components to estimate (if zero or negative, it will be set to the number of channels in the signal).
+    n_ics : int or str, default="all"
+        Number of components to estimate:
+        - if set to the string "all", it will be set to the number of channels in the signal;
+        - otherwise, it will be set to the given number.
     whiten_alg : {"zca", "pca", "none"}, default="zca"
         Whitening algorithm.
     g_name : {"logcosh", "gauss", "kurtosis", "rati", "exp1"}, default="logcosh"
@@ -185,7 +189,7 @@ class EFICA(ICA):
 
     def __init__(
         self,
-        n_ics: int = -1,
+        n_ics: int | str = "all",
         whiten_alg: str = "zca",
         g_name: str = "logcosh",
         conv_th: float = 1e-4,
@@ -196,6 +200,9 @@ class EFICA(ICA):
         seed: int | None = None,
         **kwargs,
     ):
+        assert (isinstance(n_ics, int) and n_ics > 0) or (
+            isinstance(n_ics, str) and n_ics == "all"
+        ), 'n_ics must be either a positive integer or "all".'
         assert whiten_alg in (
             "zca",
             "pca",
@@ -222,7 +229,8 @@ class EFICA(ICA):
 
         logging.info(f'Instantiating EFICA using "{g_name}" contrast function.')
 
-        self._n_ics = n_ics
+        # Map "all" -> 0
+        self._n_ics = 0 if n_ics == "all" else n_ics
         self._whiten_alg = whiten_alg
         self._whiten_kw = kwargs
         g_dict = {
@@ -242,17 +250,14 @@ class EFICA(ICA):
         if seed is not None:
             torch.manual_seed(seed)
 
-        self._mean_vec: torch.Tensor | None = None
-        self._sep_mtx: torch.Tensor | None = None
-
     @property
-    def mean_vec(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated mean vector."""
+    def mean_vec(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated mean vector."""
         return self._mean_vec
 
     @property
-    def sep_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated separation matrix."""
+    def sep_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated separation matrix."""
         return self._sep_mtx
 
     def fit(
@@ -368,7 +373,7 @@ class EFICA(ICA):
         x_tensor = x_tensor.T
 
         n_ch, n_samp = x_tensor.size()
-        if self._n_ics <= 0:
+        if self._n_ics == 0:
             self._n_ics = n_ch
         assert (
             n_ch >= self._n_ics
