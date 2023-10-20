@@ -19,7 +19,6 @@ limitations under the License.
 from __future__ import annotations
 
 import logging
-import warnings
 from math import sqrt
 
 import numpy as np
@@ -27,6 +26,7 @@ import torch
 
 from .._base import Signal, signal_to_tensor
 from ._abc_whitening import WhiteningModel
+from ._utils import eigendecomposition
 
 
 def pca_whitening(
@@ -83,9 +83,10 @@ class PCAWhitening(WhiteningModel):
     ----------
     n_pcs : int or str, default=-1
         Number of components to be selected:
+        - if set to the string "all", all components will be retained;
         - if set to the string "auto", it will be chosen automatically based on the average of the smallest
         half of eigenvalues/singular values;
-        - if zero or negative, all components will be retained.
+        - otherwise, the given number of components will be retained.
     keep_dim : bool, default=False
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
     solver : {"svd", "eigh"}, default="svd"
@@ -117,23 +118,26 @@ class PCAWhitening(WhiteningModel):
 
         logging.info(f'Instantiating PCAWhitening using "{solver}" solver.')
 
-        self._n_pcs = n_pcs
+        # Map "auto" -> -1 and "all" -> 0
+        if n_pcs == "auto":
+            self._n_pcs = -1
+        elif n_pcs == "all":
+            self._n_pcs = 0
+        else:
+            self._n_pcs = n_pcs
+
         self._keep_dim = keep_dim
         self._solver = solver
         self._device = torch.device(device) if isinstance(device, str) else device
 
-        self._exp_var_ratio: np.ndarray | None = None
-        self._mean_vec: torch.Tensor | None = None
-        self._white_mtx: torch.Tensor | None = None
-
     @property
-    def mean_vec(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated mean vector."""
+    def mean_vec(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated mean vector."""
         return self._mean_vec
 
     @property
-    def white_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated whitening matrix."""
+    def white_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated whitening matrix."""
         return self._white_mtx
 
     @property
@@ -142,8 +146,8 @@ class PCAWhitening(WhiteningModel):
         return self._n_pcs
 
     @property
-    def exp_var_ratio(self) -> np.ndarray | None:
-        """Tensor or None: Property for getting the vector of explained variance ratio."""
+    def exp_var_ratio(self) -> np.ndarray:
+        """Tensor: Property for getting the vector of explained variance ratio."""
         return self._exp_var_ratio
 
     def fit(self, x: Signal) -> WhiteningModel:
@@ -239,28 +243,16 @@ class PCAWhitening(WhiteningModel):
             exp_var_ratio = (d_sq / d_sq.sum()).cpu().numpy()
             d_mtx = torch.diag(1.0 / d) * sqrt(n_samp)
         else:
-            cov_mtx = x_tensor @ x_tensor.T / n_samp
-            d, e = torch.linalg.eigh(cov_mtx)
+            e, d = eigendecomposition(x_tensor)
 
-            # Improve numerical stability
-            eps = torch.finfo(d.dtype).eps
-            degenerate_idx = torch.lt(d, eps).nonzero()
-            if torch.any(degenerate_idx):
-                warnings.warn(
-                    f'Some eigenvalues are smaller than epsilon ({eps:.3e}), try using "SVD" solver.'
-                )
-            d[degenerate_idx] = eps
-
-            sort_idx = torch.argsort(d, descending=True)
-            d, e = d[sort_idx], e[:, sort_idx]
             exp_var_ratio = (d / d.sum()).cpu().numpy()
             d_mtx = torch.diag(1.0 / torch.sqrt(d))
         e *= torch.sign(e[0])  # guarantee consistent sign
 
         # Select number of components to retain
-        if self._n_pcs == "auto":
+        if self._n_pcs < 0:  # automatic selection
             rank_th = d[d.size(0) // 2 :].mean()
-            self._n_pcs = torch.sum(torch.ge(d, rank_th))
+            self._n_pcs = int(torch.sum(torch.ge(d, rank_th)).item())
         elif self._n_pcs <= 0:
             self._n_pcs = n_ch
         logging.info(f"Reducing dimension of data from {n_ch} to {self._n_pcs}.")

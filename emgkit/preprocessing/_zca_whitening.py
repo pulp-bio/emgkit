@@ -19,13 +19,13 @@ limitations under the License.
 from __future__ import annotations
 
 import logging
-import warnings
 from math import sqrt
 
 import torch
 
 from .._base import Signal, signal_to_tensor
 from ._abc_whitening import WhiteningModel
+from ._utils import eigendecomposition
 
 
 def zca_whitening(
@@ -94,17 +94,14 @@ class ZCAWhitening(WhiteningModel):
         self._solver = solver
         self._device = torch.device(device) if isinstance(device, str) else device
 
-        self._mean_vec: torch.Tensor | None = None
-        self._white_mtx: torch.Tensor | None = None
-
     @property
-    def mean_vec(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated mean vector."""
+    def mean_vec(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated mean vector."""
         return self._mean_vec
 
     @property
-    def white_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated whitening matrix."""
+    def white_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated whitening matrix."""
         return self._white_mtx
 
     def fit(self, x: Signal) -> WhiteningModel:
@@ -200,20 +197,8 @@ class ZCAWhitening(WhiteningModel):
 
             d_mtx = torch.diag(1.0 / d) * sqrt(n_samp)
         else:
-            cov_mtx = x_tensor @ x_tensor.T / n_samp
-            d, e = torch.linalg.eigh(cov_mtx)
+            e, d = eigendecomposition(x_tensor)
 
-            # Improve numerical stability
-            eps = torch.finfo(d.dtype).eps
-            degenerate_idx = torch.lt(d, eps).nonzero()
-            if torch.any(degenerate_idx):
-                warnings.warn(
-                    f'Some eigenvalues are smaller than epsilon ({eps:.3e}), try using "SVD" solver.'
-                )
-            d[degenerate_idx] = eps
-
-            sort_idx = torch.argsort(d, descending=True)
-            d, e = d[sort_idx], e[:, sort_idx]
             d_mtx = torch.diag(1.0 / torch.sqrt(d))
         e *= torch.sign(e[0])  # guarantee consistent sign
 
