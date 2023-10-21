@@ -166,7 +166,99 @@ def load_synthetic_signal(
             data=emg,
             index=np.arange(n_samp) / fs,
             columns=[f"Ch{i}" for i in range(n_ch)],
+            dtype=np.float32,
         )
         data.append((emg, gt_spikes_t, fs))
+
+    return data
+
+
+def load_synthetic_signal_non_iso(
+    data_path: str,
+    mvc: int,
+    cycle: int,
+    snr: int | None = None,
+    apply_filter: bool = True,
+    seed: int | None = None,
+) -> list[tuple[pd.DataFrame, dict[str, np.ndarray]]]:
+    """Load data from the simulated non-isometric dataset.
+
+    Parameters
+    ----------
+    data_path : str
+        Path to the dataset root folder.
+    mvc : {10, 30, 50}
+        Effort level as percentage of MVC.
+    cycle : {6, 4, 3}
+        Cycle for the non-stationary part.
+    snr : int or None, default=None
+        Amount of noise in the bandwidth of 20-500 Hz to add to the signal.
+    apply_filter : bool, default=True
+        Whether the signals should be filtered or not.
+    seed : int or None, default=None
+        Random seed for reproducibility (relevant if snr is not None).
+
+    Returns
+    -------
+    list of tuples of (ndarray, dict of {int : ndarray})
+        List containing, for each simulation, a tuple which comprises:
+        - the sEMG signal as a DataFrame with shape (n_samples, n_channels);
+        - the ground-truth spike times as a dictionary.
+    """
+    assert mvc in [10, 30, 50], "The MVC value type must be either 10, 30 or 50."
+    assert cycle in [6, 4, 3], "The cycle value type must be either 6, 4 or 3."
+
+    fs = 4096
+
+    data = []
+    for f in sorted(glob.glob(os.path.join(data_path, f"MVC{mvc}S*C{cycle}.h5"))):
+        # Load sEMG data
+        emg = pd.read_hdf(f, "EMG")
+        n_samp, n_ch = emg.shape
+
+        # Apply noise, if specified
+        if snr is not None:
+            emg_arr = emg.to_numpy()
+
+            # Compute signal power and convert to dB
+            emg_avg_power = np.mean(np.square(emg_arr), axis=0)
+            emg_avg_db = 10 * np.log10(emg_avg_power)
+            # Compute noise power
+            noise_avg_db = emg_avg_db - snr
+            noise_avg_power = 10 ** (noise_avg_db / 10)
+
+            # Generate 20-500Hz noise with given power
+            noise = np.zeros_like(emg_arr)
+            for i in range(n_ch):
+                noise[:, i] = _band_limited_noise(
+                    min_freq=20, max_freq=500, n_samples=n_samp, fs=fs, seed=seed
+                )
+                noise[:, i] *= np.sqrt(noise_avg_power[i])
+
+            # Noise up the original signal
+            emg_arr += noise
+
+            # Apply 1st order, 20-500Hz Butterworth filter, if specified
+            if apply_filter:
+                sos = signal.butter(
+                    N=1, Wn=(20, 500), btype="bandpass", output="sos", fs=fs
+                )
+                emg_arr = signal.sosfiltfilt(sos, emg_arr, axis=0).copy()
+
+            emg = pd.DataFrame(
+                data=emg_arr,
+                index=emg.index,
+                columns=emg.columns,
+                dtype=np.float32,
+            )
+
+        # Load ground-truth spikes
+        gt_spikes_t_df = pd.read_hdf(f, "Spikes")
+        gt_spikes_t = {
+            k: v.to_numpy(dtype=np.float32)
+            for k, v in gt_spikes_t_df.groupby("MU index")["Discharge time"]
+        }
+
+        data.append((emg, gt_spikes_t))
 
     return data
