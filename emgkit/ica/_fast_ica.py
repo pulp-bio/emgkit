@@ -302,7 +302,7 @@ class FastICA(ICA):
         ), "Mean vector or separation matrix are null, fit the model first."
 
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device).T
 
         # Decompose signal
         ics = self._sep_mtx @ (x_tensor - self._mean_vec)
@@ -312,7 +312,7 @@ class FastICA(ICA):
     def _fit_transform(self, x: Signal, w_init: torch.Tensor | None) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device, allow_1d=False)
+        x_tensor = signal_to_tensor(x, self._device)
 
         # Whitening
         if self._whiten_alg != "none":

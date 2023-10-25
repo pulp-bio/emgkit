@@ -221,7 +221,7 @@ class PCAWhitening(WhiteningModel):
         ), "Mean vector or whitening matrix are null, fit the model first."
 
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device).T
 
         # Center and whiten signal
         x_tensor -= self._mean_vec
@@ -232,7 +232,7 @@ class PCAWhitening(WhiteningModel):
     def _fit_transform(self, x: Signal) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device).T
         n_ch, n_samp = x_tensor.size()
         self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
         x_tensor -= self._mean_vec

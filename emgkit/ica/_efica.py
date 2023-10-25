@@ -331,7 +331,7 @@ class EFICA(ICA):
         ), "Mean vector or separation matrix are null, fit the model first."
 
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device, allow_1d=False).T
+        x_tensor = signal_to_tensor(x, self._device).T
 
         # Decompose signal
         ics = self._sep_mtx @ (x_tensor - self._mean_vec)
@@ -345,7 +345,7 @@ class EFICA(ICA):
     ) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device, allow_1d=False)
+        x_tensor = signal_to_tensor(x, self._device)
 
         def sym_orth(w_: torch.Tensor) -> torch.Tensor:
             eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
