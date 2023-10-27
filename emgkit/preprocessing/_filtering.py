@@ -47,7 +47,7 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarr
     x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, cut, btype="lowpass", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
 def highpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarray:
@@ -73,7 +73,7 @@ def highpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndar
     x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, cut, btype="highpass", output="sos", fs=fs)
-    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
 def bandpass_filter(
@@ -109,7 +109,7 @@ def bandpass_filter(
     sos = signal.butter(
         order, (low_cut, high_cut), btype="bandpass", output="sos", fs=fs
     )
-    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
 def bandstop_filter(
@@ -145,4 +145,4 @@ def bandstop_filter(
     sos = signal.butter(
         order, (low_cut, high_cut), btype="bandstop", output="sos", fs=fs
     )
-    return signal.sosfiltfilt(sos, x_array, axis=0).copy()
+    return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
