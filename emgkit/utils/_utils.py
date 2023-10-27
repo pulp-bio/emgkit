@@ -31,13 +31,13 @@ from sklearn.metrics import silhouette_score
 from .._base import Signal, signal_to_array
 
 
-def eigendecomposition(x_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def eigendecomposition(m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Perform eigendecomposition of the covariance matrix of a given Tensor.
 
     Parameters
     ----------
-    x_tensor: Tensor
-        Input Tensor with shape (n_channels, n_samples).
+    m: Tensor
+        Square Tensor.
 
     Returns
     -------
@@ -46,21 +46,19 @@ def eigendecomposition(x_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tens
     Tensor:
         1D Tensor of eigenvalues sorted in descending order.
     """
-    n_samp = x_tensor.size(1)
-    cov_mtx = x_tensor @ x_tensor.T / n_samp
-    d, e = torch.linalg.eigh(cov_mtx)
+    eig_vals, eig_vecs = torch.linalg.eigh(m)
 
     # Improve numerical stability
-    eps = torch.finfo(d.dtype).eps
-    degenerate_idx = torch.lt(d, eps).nonzero()
+    eps = torch.finfo(eig_vals.dtype).eps
+    degenerate_idx = torch.lt(eig_vals, eps).nonzero()
     if torch.any(degenerate_idx):
         warnings.warn(f"Some eigenvalues are smaller than epsilon ({eps:.3e}).")
-    d[degenerate_idx] = eps
+    eig_vals[degenerate_idx] = eps
 
-    sort_idx = torch.argsort(d, descending=True)
-    d, e = d[sort_idx], e[:, sort_idx]
+    sort_idx = torch.argsort(eig_vals, descending=True)
+    eig_vals, eig_vecs = eig_vals[sort_idx], eig_vecs[:, sort_idx]
 
-    return e, d
+    return eig_vecs, eig_vals
 
 
 def power_spectrum(x: Signal, fs: float) -> pd.DataFrame:

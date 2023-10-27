@@ -23,6 +23,7 @@ from abc import ABC, abstractmethod
 import torch
 
 from .._base import Signal
+from ..preprocessing import WhiteningModel
 
 
 class ICA(ABC):
@@ -30,28 +31,22 @@ class ICA(ABC):
 
     @property
     @abstractmethod
-    def mean_vec(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated mean vector."""
-
-    @property
-    @abstractmethod
     def sep_mtx(self) -> torch.Tensor | None:
         """Tensor or None: Property for getting the estimated separation matrix."""
 
+    @property
     @abstractmethod
-    def fit(
-        self,
-        x: Signal,
-        w_init: torch.Tensor | None = None,
-    ) -> ICA:
+    def whiten_model(self) -> WhiteningModel | None:
+        """WhiteningModel or None: Property for getting the whitening model."""
+
+    @abstractmethod
+    def fit(self, x: Signal) -> ICA:
         """Fit the ICA model on the given signal.
 
         Parameters
         ----------
         x : Signal
             A signal with shape (n_samples, n_channels).
-        w_init : Tensor or None, default=None
-            Initial separation matrix with shape (n_components, n_channels).
 
         Returns
         -------
@@ -65,19 +60,13 @@ class ICA(ABC):
         """
 
     @abstractmethod
-    def fit_transform(
-        self,
-        x: Signal,
-        w_init: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    def fit_transform(self, x: Signal) -> torch.Tensor:
         """Fit the ICA model on the given signal and return the estimated sources.
 
         Parameters
         ----------
         x : Signal
             A signal with shape (n_samples, n_channels).
-        w_init : Tensor or None, default=None
-            Initial separation matrix with shape (n_components, n_channels).
 
         Returns
         -------

@@ -26,10 +26,21 @@ from math import sqrt
 import torch
 
 from .._base import Signal, signal_to_tensor
-from ..preprocessing import pca_whitening, zca_whitening
+from ..preprocessing import PCAWhitening, WhiteningModel, ZCAWhitening
 from . import contrast_functions as cf
 from ._abc_ica import ICA
 from ._warn import ConvergenceWarning
+
+
+def _sym_orth(w_: torch.Tensor) -> torch.Tensor:
+    """Helper function to perform symmetric orthogonalization."""
+    eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
+
+    # Improve numerical stability
+    eig_vals = torch.clip(eig_vals, min=torch.finfo(w_.dtype).tiny)
+
+    d_mtx = torch.diag(1.0 / torch.sqrt(eig_vals))
+    return eig_vecs @ d_mtx @ eig_vecs.T @ w_
 
 
 def fast_ica(
@@ -38,14 +49,14 @@ def fast_ica(
     whiten_alg: str = "zca",
     strategy: str = "symmetric",
     g_name: str = "logcosh",
+    w_init: torch.Tensor | None = None,
     conv_th: float = 1e-4,
     max_iter: int = 200,
     do_saddle_test: bool = False,
     device: torch.device | str | None = None,
     seed: int | None = None,
-    w_init: torch.Tensor | None = None,
     **kwargs,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, FastICA]:
     """Function implementing FastICA.
 
     Parameters
@@ -62,6 +73,8 @@ def fast_ica(
         Name of FastICA strategy.
     g_name : {"logcosh", "gauss", "kurtosis", "skewness", "rati"}, default="logcosh"
         Name of the contrast function.
+    w_init : Tensor or None, default=None
+        Initial separation matrix with shape (n_components, n_channels).
     conv_th : float, default=1e-4
         Threshold for convergence.
     max_iter : int, default=200
@@ -72,8 +85,6 @@ def fast_ica(
         Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
-    w_init : Tensor or None, default=None
-        Initial separation matrix with shape (n_components, n_channels).
     **kwargs
         Keyword arguments forwarded to whitening algorithm.
 
@@ -81,10 +92,8 @@ def fast_ica(
     -------
     Tensor
         Estimated source signal with shape (n_samples, n_components).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated separation matrix with shape (n_components, n_channels).
+    FastICA
+        Fit FastICA model.
 
     Warns
     -----
@@ -96,6 +105,7 @@ def fast_ica(
         whiten_alg,
         strategy,
         g_name,
+        w_init,
         conv_th,
         max_iter,
         do_saddle_test,
@@ -103,9 +113,9 @@ def fast_ica(
         seed,
         **kwargs,
     )
-    ics = ica_model.fit_transform(x, w_init)
+    ics = ica_model.fit_transform(x)
 
-    return ics, ica_model.mean_vec, ica_model.sep_mtx
+    return ics, ica_model
 
 
 class FastICA(ICA):
@@ -123,6 +133,8 @@ class FastICA(ICA):
         Name of FastICA strategy.
     g_name : {"logcosh", "gauss", "kurtosis", "skewness", "rati"}, default="logcosh"
         Name of the contrast function.
+    w_init : Tensor or None, default=None
+        Initial separation matrix with shape (n_components, n_channels).
     conv_th : float, default=1e-4
         Threshold for convergence.
     max_iter : int, default=200
@@ -140,10 +152,6 @@ class FastICA(ICA):
     ----------
     _n_ics : int
         Number of components to estimate.
-    _whiten_alg : str
-        Whitening algorithm.
-    _whiten_kw : dict
-        Whitening arguments.
     _strategy : str
         Name of FastICA strategy.
     _g_func : ContrastFunction
@@ -164,6 +172,7 @@ class FastICA(ICA):
         whiten_alg: str = "zca",
         strategy: str = "symmetric",
         g_name: str = "logcosh",
+        w_init: torch.Tensor | None = None,
         conv_th: float = 1e-4,
         max_iter: int = 200,
         do_saddle_test: bool = False,
@@ -200,10 +209,25 @@ class FastICA(ICA):
             f'Instantiating FastICA using "{strategy}" strategy and "{g_name}" contrast function.'
         )
 
-        # Map "all" -> 0
-        self._n_ics = 0 if n_ics == "all" else n_ics
-        self._whiten_alg = whiten_alg
-        self._whiten_kw = kwargs
+        self._device = torch.device(device) if isinstance(device, str) else device
+
+        # Whitening model
+        whiten_dict = {
+            "zca": ZCAWhitening,
+            "pca": PCAWhitening,
+            "none": lambda **_: None,
+        }
+        whiten_kw = kwargs
+        whiten_kw["device"] = self._device
+        self._whiten_model: WhiteningModel | None = whiten_dict[whiten_alg](**whiten_kw)
+
+        # Weights
+        if w_init is not None:
+            self._sep_mtx = w_init.to(self._device)
+            self._n_ics = w_init.size(0)
+        else:
+            self._n_ics = 0 if n_ics == "all" else n_ics  # map "all" -> 0
+
         self._strategy = strategy
         g_dict = {
             "logcosh": cf.logcosh,
@@ -216,34 +240,27 @@ class FastICA(ICA):
         self._conv_th = conv_th
         self._max_iter = max_iter
         self._do_saddle_test = do_saddle_test
-        self._device = torch.device(device) if isinstance(device, str) else device
 
         if seed is not None:
             torch.manual_seed(seed)
-
-    @property
-    def mean_vec(self) -> torch.Tensor:
-        """Tensor: Property for getting the estimated mean vector."""
-        return self._mean_vec
 
     @property
     def sep_mtx(self) -> torch.Tensor:
         """Tensor: Property for getting the estimated separation matrix."""
         return self._sep_mtx
 
-    def fit(
-        self,
-        x: Signal,
-        w_init: torch.Tensor | None = None,
-    ) -> ICA:
+    @property
+    def whiten_model(self) -> WhiteningModel | None:
+        """WhiteningModel or None: Property for getting the whitening model."""
+        return self._whiten_model
+
+    def fit(self, x: Signal) -> ICA:
         """Fit the ICA model on the given signal.
 
         Parameters
         ----------
         x : Signal
             A signal with shape (n_samples, n_channels).
-        w_init : Tensor or None, default=None
-            Initial separation matrix with shape (n_components, n_channels).
 
         Returns
         -------
@@ -255,22 +272,16 @@ class FastICA(ICA):
         ConvergenceWarning
             The algorithm didn't converge.
         """
-        self._fit_transform(x, w_init)
+        self._fit_transform(x)
         return self
 
-    def fit_transform(
-        self,
-        x: Signal,
-        w_init: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    def fit_transform(self, x: Signal) -> torch.Tensor:
         """Fit the ICA model on the given signal and return the estimated ICs.
 
         Parameters
         ----------
         x : Signal
             A signal with shape (n_samples, n_channels).
-        w_init : Tensor or None, default=None
-            Initial separation matrix with shape (n_components, n_channels).
 
         Returns
         -------
@@ -282,7 +293,7 @@ class FastICA(ICA):
         ConvergenceWarning
             The algorithm didn't converge.
         """
-        return self._fit_transform(x, w_init)
+        return self._fit_transform(x)
 
     def transform(self, x: Signal) -> torch.Tensor:
         """Decompose the given signal using the fitted ICA model.
@@ -298,36 +309,28 @@ class FastICA(ICA):
             Estimated source signal with shape (n_samples, n_components).
         """
         assert (
-            self._mean_vec is not None and self._sep_mtx is not None
-        ), "Mean vector or separation matrix are null, fit the model first."
+            self._sep_mtx is not None
+        ), "Separation matrix is null, fit the model first."
 
         # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device).T
+        x_tensor = signal_to_tensor(x, self._device)
 
         # Decompose signal
-        ics = self._sep_mtx @ (x_tensor - self._mean_vec)
+        if self._whiten_model is not None:
+            ics = self._whiten_model.transform(x_tensor) @ self._sep_mtx.T
+        else:
+            ics = x_tensor @ self._sep_mtx.T
 
-        return ics.T
+        return ics
 
-    def _fit_transform(self, x: Signal, w_init: torch.Tensor | None) -> torch.Tensor:
+    def _fit_transform(self, x: Signal) -> torch.Tensor:
         """Helper method for fit and fit_transform."""
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device)
 
         # Whitening
-        if self._whiten_alg != "none":
-            whiten_alg_dict = {"zca": zca_whitening, "pca": pca_whitening}
-            x_tensor, self._mean_vec, white_mtx = whiten_alg_dict[self._whiten_alg](
-                x_tensor, **self._whiten_kw, device=self._device
-            )
-        else:
-            x_tensor = x_tensor
-            self._mean_vec = torch.zeros(
-                x_tensor.size(0), 1, dtype=x_tensor.dtype, device=self._device
-            )
-            white_mtx = torch.eye(
-                x_tensor.size(1), dtype=x_tensor.dtype, device=self._device
-            )
+        if self._whiten_model is not None:
+            x_tensor = self._whiten_model.fit_transform(x_tensor)
         x_tensor = x_tensor.T
 
         n_ch = x_tensor.size(0)
@@ -337,39 +340,23 @@ class FastICA(ICA):
             n_ch >= self._n_ics
         ), f"Too few channels ({n_ch}) with respect to target components ({self._n_ics})."
 
-        if w_init is None:
-            w_init = torch.randn(
+        if not hasattr(self, "_sep_mtx"):
+            self._sep_mtx = torch.randn(
                 self._n_ics, n_ch, dtype=x_tensor.dtype, device=self._device
             )
-        else:
-            assert w_init.shape == (
-                self._n_ics,
-                n_ch,
-            ), f"The shape of w_init should be ({self._n_ics}, {n_ch})."
-            w_init = w_init.to(self._device)
 
         # Perform decomposition
         strategy_dict = {"symmetric": self._symmetric, "deflation": self._deflation}
-        self._sep_mtx = strategy_dict[self._strategy](x_tensor, w_init)
+        self._sep_mtx = strategy_dict[self._strategy](x_tensor)
         ics = self._sep_mtx @ x_tensor
-        self._sep_mtx = self._sep_mtx @ white_mtx
 
         return ics.T
 
-    def _symmetric(self, x: torch.Tensor, w_init: torch.Tensor) -> torch.Tensor:
+    def _symmetric(self, x: torch.Tensor) -> torch.Tensor:
         """Helper method for symmetric algorithm."""
         n_samp = x.size(1)
 
-        def sym_orth(w_: torch.Tensor) -> torch.Tensor:
-            eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
-
-            # Improve numerical stability
-            eig_vals = torch.clip(eig_vals, min=torch.finfo(w_.dtype).tiny)
-
-            d_mtx = torch.diag(1.0 / torch.sqrt(eig_vals))
-            return eig_vecs @ d_mtx @ eig_vecs.T @ w_
-
-        w = sym_orth(w_init)
+        w = _sym_orth(self._sep_mtx)
 
         saddle_test_done = False
         max_iter = self._max_iter
@@ -387,7 +374,7 @@ class FastICA(ICA):
                 w_new = (
                     g_res.g1_u @ x.T / n_samp - g_res.g2_u.mean(dim=1, keepdim=True) * w
                 )
-                w_new = sym_orth(w_new)
+                w_new = _sym_orth(w_new)
 
                 # Compute distance:
                 # 1. Compute absolute dot product between old and new separation vectors (i.e., the rows of W)
@@ -449,9 +436,9 @@ class FastICA(ICA):
 
         return w
 
-    def _deflation(self, x: torch.Tensor, w_init: torch.Tensor) -> torch.Tensor:
+    def _deflation(self, x: torch.Tensor) -> torch.Tensor:
         """Helper method for deflation algorithm."""
-        w = w_init.clone()
+        w = self._sep_mtx.clone()
 
         failed_convergence = False
         for i in range(self._n_ics):
