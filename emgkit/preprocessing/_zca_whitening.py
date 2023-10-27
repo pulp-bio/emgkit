@@ -32,7 +32,7 @@ def zca_whitening(
     x: Signal,
     solver: str = "svd",
     device: torch.device | str | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, ZCAWhitening]:
     """Function performing ZCA whitening.
 
     Parameters
@@ -48,10 +48,8 @@ def zca_whitening(
     -------
     Tensor
         Whitened signal with shape (n_samples, n_components).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated whitening matrix.
+    ZCAWhitening
+        Fit ZCA whitening model.
 
     Raises
     ------
@@ -63,7 +61,7 @@ def zca_whitening(
     whiten_model = ZCAWhitening(solver, device)
     x_w = whiten_model.fit_transform(x)
 
-    return x_w, whiten_model.mean_vec, whiten_model.white_mtx
+    return x_w, whiten_model
 
 
 class ZCAWhitening(WhiteningModel):
@@ -93,6 +91,16 @@ class ZCAWhitening(WhiteningModel):
 
         self._solver = solver
         self._device = torch.device(device) if isinstance(device, str) else device
+
+    @property
+    def eig_vecs(self) -> torch.Tensor:
+        """Tensor: Property for getting the matrix of eigenvectors."""
+        return self._eig_vecs
+
+    @property
+    def eig_vals(self) -> torch.Tensor:
+        """Tensor: Property for getting the vector of eigenvalues."""
+        return self._eig_vals
 
     @property
     def mean_vec(self) -> torch.Tensor:
@@ -192,17 +200,23 @@ class ZCAWhitening(WhiteningModel):
         self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
         x_tensor -= self._mean_vec
 
+        # Compute eigenvectors and eigenvalues of the covariance matrix X @ X.T / n_samp
         if self._solver == "svd":
-            e, d, _ = torch.linalg.svd(x_tensor, full_matrices=False)
+            # The left-singular vectors of X are the eigenvectors of X @ X.T
+            # The singular values of X are the square root of the eigenvalues of X @ X.T
+            self._eig_vecs, s_vals, _ = torch.linalg.svd(x_tensor, full_matrices=False)
+            self._eig_vals = s_vals**2
 
-            d_mtx = torch.diag(1.0 / d) * sqrt(n_samp)
+            d_mtx = torch.diag(1.0 / s_vals) * sqrt(n_samp)
         else:
-            e, d = eigendecomposition(x_tensor)
+            n_samp = x_tensor.size(1)
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+            self._eig_vecs, self._eig_vals = eigendecomposition(cov_mtx)
 
-            d_mtx = torch.diag(1.0 / torch.sqrt(d))
-        e *= torch.sign(e[0])  # guarantee consistent sign
+            d_mtx = torch.diag(1.0 / torch.sqrt(self._eig_vals))
+        self._eig_vecs *= torch.sign(self._eig_vecs[0])  # guarantee consistent sign
 
-        self._white_mtx = e @ d_mtx @ e.T
+        self._white_mtx = self._eig_vecs @ d_mtx @ self._eig_vecs.T
         x_w = self._white_mtx @ x_tensor
 
         return x_w.T

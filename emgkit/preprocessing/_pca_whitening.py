@@ -35,7 +35,7 @@ def pca_whitening(
     keep_dim: bool = False,
     solver: str = "svd",
     device: torch.device | str | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, PCAWhitening]:
     """Function performing PCA whitening.
 
     Parameters
@@ -59,10 +59,8 @@ def pca_whitening(
     -------
     Tensor
         Whitened signal with shape (n_samples, n_components).
-    Tensor
-        Estimated mean vector.
-    Tensor
-        Estimated whitening matrix.
+    PCAWhitening
+        Fit PCA whitening model.
 
     Raises
     ------
@@ -74,7 +72,7 @@ def pca_whitening(
     whiten_model = PCAWhitening(n_pcs, keep_dim, solver, device)
     x_w = whiten_model.fit_transform(x)
 
-    return x_w, whiten_model.mean_vec, whiten_model.white_mtx
+    return x_w, whiten_model
 
 
 class PCAWhitening(WhiteningModel):
@@ -130,6 +128,16 @@ class PCAWhitening(WhiteningModel):
         self._keep_dim = keep_dim
         self._solver = solver
         self._device = torch.device(device) if isinstance(device, str) else device
+
+    @property
+    def eig_vecs(self) -> torch.Tensor:
+        """Tensor: Property for getting the matrix of eigenvectors."""
+        return self._eig_vecs
+
+    @property
+    def eig_vals(self) -> torch.Tensor:
+        """Tensor: Property for getting the vector of eigenvalues."""
+        return self._eig_vals
 
     @property
     def mean_vec(self) -> torch.Tensor:
@@ -237,23 +245,28 @@ class PCAWhitening(WhiteningModel):
         self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
         x_tensor -= self._mean_vec
 
+        # Compute eigenvectors and eigenvalues of the covariance matrix X @ X.T / n_samp
         if self._solver == "svd":
-            e, d, _ = torch.linalg.svd(x_tensor, full_matrices=False)
+            # The left-singular vectors of X are the eigenvectors of X @ X.T
+            # The singular values of X are the square root of the eigenvalues of X @ X.T
+            self._eig_vecs, s_vals, _ = torch.linalg.svd(x_tensor, full_matrices=False)
+            self._eig_vals = s_vals**2
 
-            d_sq = d**2  # singular values are the square root of eigenvalues
-            exp_var_ratio = (d_sq / d_sq.sum()).cpu().numpy()
-            d_mtx = torch.diag(1.0 / d) * sqrt(n_samp)
+            exp_var_ratio = (self._eig_vals / self._eig_vals.sum()).cpu().numpy()
+            d_mtx = torch.diag(1.0 / s_vals) * sqrt(n_samp)
         else:
-            e, d = eigendecomposition(x_tensor)
+            n_samp = x_tensor.size(1)
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+            self._eig_vecs, self._eig_vals = eigendecomposition(cov_mtx)
 
-            exp_var_ratio = (d / d.sum()).cpu().numpy()
-            d_mtx = torch.diag(1.0 / torch.sqrt(d))
-        e *= torch.sign(e[0])  # guarantee consistent sign
+            exp_var_ratio = (self._eig_vals / self._eig_vals.sum()).cpu().numpy()
+            d_mtx = torch.diag(1.0 / torch.sqrt(self._eig_vals))
+        self._eig_vecs *= torch.sign(self._eig_vecs[0])  # guarantee consistent sign
 
         # Select number of components to retain
         if self._n_pcs < 0:  # automatic selection
-            rank_th = d[d.size(0) // 2 :].mean()
-            self._n_pcs = int(torch.sum(torch.ge(d, rank_th)).item())
+            rank_th = self._eig_vals[self._eig_vals.size(0) // 2 :].mean()
+            self._n_pcs = int(torch.sum(torch.ge(self._eig_vals, rank_th)).item())
         elif self._n_pcs == 0:
             self._n_pcs = n_ch
         assert (
@@ -262,12 +275,12 @@ class PCAWhitening(WhiteningModel):
 
         logging.info(f"Reducing dimension of data from {n_ch} to {self._n_pcs}.")
         d_mtx = d_mtx[: self._n_pcs, : self._n_pcs]
-        e = e[:, : self._n_pcs]
+        self._eig_vecs = self._eig_vecs[:, : self._n_pcs]
         self._exp_var_ratio = exp_var_ratio[: self._n_pcs]
 
-        self._white_mtx = d_mtx @ e.T
+        self._white_mtx = d_mtx @ self._eig_vecs.T
         if self._keep_dim:  # re-project to original dimensionality
-            self._white_mtx = e @ self._white_mtx
+            self._white_mtx = self._eig_vecs @ self._white_mtx
             logging.info(f"Re-projecting dimensionality to {self._white_mtx.size(0)}.")
         x_w = self._white_mtx @ x_tensor
 

@@ -30,6 +30,16 @@ class WhiteningModel(ABC):
 
     @property
     @abstractmethod
+    def eig_vecs(self) -> torch.Tensor:
+        """Tensor: Property for getting the matrix of eigenvectors."""
+
+    @property
+    @abstractmethod
+    def eig_vals(self) -> torch.Tensor:
+        """Tensor: Property for getting the vector of eigenvalues."""
+
+    @property
+    @abstractmethod
     def mean_vec(self) -> torch.Tensor | None:
         """Tensor or None: Property for getting the estimated mean vector."""
 
