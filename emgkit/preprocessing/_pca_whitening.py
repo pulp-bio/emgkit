@@ -275,6 +275,7 @@ class PCAWhitening(WhiteningModel):
         logging.info(f"Reducing dimension of data from {n_ch} to {self._n_pcs}.")
         d_mtx = d_mtx[: self._n_pcs, : self._n_pcs]
         self._eig_vecs = self._eig_vecs[:, : self._n_pcs]
+        self._eig_vals = self._eig_vals[: self._n_pcs]
         self._exp_var_ratio = exp_var_ratio[: self._n_pcs]
 
         self._white_mtx = d_mtx @ self._eig_vecs.T
