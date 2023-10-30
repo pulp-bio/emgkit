@@ -27,9 +27,10 @@ import numpy as np
 import pandas as pd
 import torch
 
-from .. import preprocessing, spike_stats, utils
+from .. import spike_stats, utils
 from .._base import Signal, signal_to_array
 from ..ica import contrast_functions as cf
+from ..preprocessing import PCAWhitening, WhiteningModel, ZCAWhitening, extend_signal
 
 
 class EMGBSS:
@@ -39,15 +40,17 @@ class EMGBSS:
     ----------
     fs : float
         Sampling frequency of the signal.
-    f_ext_ms : float, default=-1
+    n_mu : int or str, default="all"
+        Number of target MUs to extract:
+        - if set to the string "same_ext", it will be set to the number of extended observations;
+        - otherwise, it will be set to the given number.
+    f_ext_ms : float or str, default="auto"
         Extension factor for the signal (in ms):
+        - if set to the string "same_n_mu", it will be set to n. of target MUs / n. of channels
+        (if n_mu is "same_ext", extension will be disabled);
         - if set to the string "auto", it will be set to 1000 / n. of channels;
         - if set to the string "none", the signal won't be extended;
         - otherwise, it will be set to the given value.
-    n_mu_target : int or str, default="all"
-        Number of target MUs to extract:
-        - if set to the string "all", it will be set to the number of extended observations;
-        - otherwise, it will be set to the given number.
     g_name : {"skewness", "logcosh", "gauss", "kurtosis", "rati"}, default="skewness"
         Name of the contrast function.
     conv_th : float, default=1e-4
@@ -81,8 +84,6 @@ class EMGBSS:
     ----------
     _fs : float
         Sampling frequency of the signal.
-    _n_mu_target : int
-        Number of target MUs to extract.
     _g_func : ContrastFunction
         Contrast function.
     _conv_th : float
@@ -99,10 +100,6 @@ class EMGBSS:
         Torch device.
     _prng : Generator
         Actual PRNG.
-    _whiten_alg : str
-        Whitening algorithm.
-    _whiten_kw : dict
-        Whitening arguments.
     _bin_alg : str
         Binarization algorithm.
     _ref_period : float
@@ -116,8 +113,8 @@ class EMGBSS:
     def __init__(
         self,
         fs: float,
-        f_ext_ms: float | str = "auto",
-        n_mu_target: int | str = "all",
+        n_mu: int | str = "same_ext",
+        f_ext_ms: float | str = "same_n_mu",
         g_name: str = "skewness",
         conv_th: float = 1e-4,
         max_iter: int = 100,
@@ -133,12 +130,12 @@ class EMGBSS:
         dup_perc: float = 0.3,
         dup_tol_ms: float = 0.5,
     ):
+        assert (isinstance(n_mu, int) and n_mu > 0) or (
+            isinstance(n_mu, str) and n_mu == "same_ext"
+        ), 'n_mu must be either a positive integer or "same_ext".'
         assert (isinstance(f_ext_ms, float) and f_ext_ms > 0) or (
-            isinstance(f_ext_ms, str) and f_ext_ms in ("auto", "none")
-        ), 'f_ext_ms must be either a positive float, "auto" or "none".'
-        assert (isinstance(n_mu_target, int) and n_mu_target > 0) or (
-            isinstance(n_mu_target, str) and n_mu_target == "all"
-        ), 'n_mu_target must be either a positive integer or "all".'
+            isinstance(f_ext_ms, str) and f_ext_ms in ("same_n_mu", "auto", "none")
+        ), 'f_ext_ms must be either a positive float, "same_n_mu", "auto" or "none".'
         assert g_name in (
             "skewness",
             "logcosh",
@@ -162,16 +159,30 @@ class EMGBSS:
 
         self._fs = fs
 
-        # Map "auto" -> -1 and "none" -> 1
-        if f_ext_ms == "auto":
+        self._device = torch.device(device) if isinstance(device, str) else device
+
+        # Whitening model
+        whiten_dict = {
+            "zca": ZCAWhitening,
+            "pca": PCAWhitening,
+        }
+        whiten_kw = {} if whiten_kw is None else whiten_kw
+        whiten_kw["device"] = self._device
+        self._whiten_model: WhiteningModel = whiten_dict[whiten_alg](**whiten_kw)
+
+        # Map "same_ext" -> 0
+        self._n_mu = 0 if n_mu == "same_ext" else n_mu
+
+        # Map "same_n_mu" -> 0, "auto" -> -1 and "none" -> 1
+        if f_ext_ms == "same_n_mu":
+            self._f_ext = 0
+        elif f_ext_ms == "auto":
             self._f_ext = -1
         elif f_ext_ms == "none":
             self._f_ext = 1
         else:
             self._f_ext = int(round(f_ext_ms / 1000 * fs))
 
-        # Map "all" -> 0
-        self._n_mu_target = 0 if n_mu_target == "all" else n_mu_target
         g_dict = {
             "skewness": cf.skewness,
             "logcosh": cf.logcosh,
@@ -185,34 +196,25 @@ class EMGBSS:
         self._sil_th = sil_th
         self._cov_isi_th = cov_isi_th
         self._dr_th = dr_th
-        self._device = torch.device(device) if isinstance(device, str) else device
         self._prng = np.random.default_rng(seed)
 
         if seed is not None:
             torch.manual_seed(seed)
 
-        self._whiten_alg = whiten_alg
-        self._whiten_kw = {} if whiten_kw is None else whiten_kw
-        self._whiten_kw["device"] = self._device
         self._bin_alg = bin_alg
         self._ref_period = int(round(ref_period_ms / 1000 * fs))
         self._dup_perc = dup_perc
         self._dup_tol_ms = dup_tol_ms
 
     @property
-    def mean_vec(self) -> torch.Tensor:
-        """Tensor: Property for getting the estimated mean vector."""
-        return self._mean_vec
-
-    @property
-    def white_mtx(self) -> torch.Tensor:
-        """Tensor: Property for getting the estimated whitening matrix."""
-        return self._white_mtx
-
-    @property
     def sep_mtx(self) -> torch.Tensor:
         """Tensor: Property for getting the estimated separation matrix."""
         return self._sep_mtx
+
+    @property
+    def whiten_model(self) -> WhiteningModel:
+        """WhiteningModel: Property for getting the whitening model."""
+        return self._whiten_model
 
     @property
     def spike_ths(self) -> np.ndarray:
@@ -222,7 +224,7 @@ class EMGBSS:
     @property
     def n_mu(self) -> int:
         """int: Property for getting the number of identified motor units."""
-        return self._sep_mtx.size(0) if self._sep_mtx is not None else -1
+        return self._n_mu
 
     @property
     def f_ext(self) -> int:
@@ -279,26 +281,26 @@ class EMGBSS:
         dict of {str : ndarray}
             Dictionary containing the discharge times for each MU.
         """
-        assert (
-            self._mean_vec is not None
-            and self._sep_mtx is not None
-            and self._spike_ths is not None
-        ), "Mean vector, separation matrix or spike-noise thresholds are null, fit the model first."
+        is_fit = (
+            hasattr(self, "_whiten_model")
+            and hasattr(self, "_sep_mtx")
+            and hasattr(self, "_spike_ths")
+        )
+        assert is_fit, "Fit the model first."
 
         # 1. Extension
-        emg_ext = preprocessing.extend_signal(emg, self._f_ext)
+        emg_ext = extend_signal(emg, self._f_ext)
         n_samp = emg_ext.shape[0]
-        emg_ext = torch.from_numpy(emg_ext).to(self._device).T
+        emg_ext = torch.from_numpy(emg_ext).to(self._device)
 
         # 2. Whitening + ICA
-        ics = self._sep_mtx @ self._white_mtx @ (emg_ext - self._mean_vec)
+        ics = self._whiten_model.transform(emg_ext) @ self._sep_mtx.T
 
         # 3. Spike extraction
-        n_mu = ics.shape[0]
         spikes_t = {}
-        for i in range(n_mu):
+        for i in range(self._n_mu):
             spikes_i = utils.detect_spikes(
-                ics[i],
+                ics[:, i],
                 ref_period=self._ref_period,
                 bin_alg=self._bin_alg,
                 threshold=self._spike_ths[i].item(),
@@ -308,9 +310,9 @@ class EMGBSS:
 
         # Pack results in a DataFrame
         ics = pd.DataFrame(
-            data=ics.T.cpu().numpy(),
+            data=ics.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
-            columns=[f"MU{i}" for i in range(n_mu)],
+            columns=[f"MU{i}" for i in range(self._n_mu)],
         )
 
         return ics, spikes_t
@@ -323,41 +325,37 @@ class EMGBSS:
         emg_array = signal_to_array(emg)
         n_ch = emg_array.shape[1]
 
-        # Apply heuristic
-        if self._f_ext < 0:
+        # Decide extension factor
+        if self._f_ext < 0:  # "auto"
+            # Apply heuristic
             self._f_ext = int(round(1000 / n_ch))
+        elif self._f_ext == 0:  # "same_n_mu"
+            # Check n_mu: if it's set to "same_ext", disable extension
+            self._f_ext = 1 if self._n_mu == 0 else int(round(self._n_mu / n_ch))
 
         # 1. Extension
         logging.info(f"Number of channels before extension: {n_ch}")
-        emg_ext = preprocessing.extend_signal(emg_array, self._f_ext)
+        emg_ext = extend_signal(emg_array, self._f_ext)
         n_samp, n_ch_ext = emg_ext.shape
         logging.info(f"Number of channels after extension: {n_ch_ext}")
 
         # 2. Whitening
-        if self._whiten_alg == "pca":
-            emg_white, self._mean_vec, self._white_mtx = preprocessing.pca_whitening(
-                emg_ext, **self._whiten_kw
-            )
-        else:
-            emg_white, self._mean_vec, self._white_mtx = preprocessing.zca_whitening(
-                emg_ext, **self._whiten_kw
-            )
-        emg_white = emg_white.T
+        emg_white = self._whiten_model.fit_transform(emg_ext).T
         n_ch_w = emg_white.size(0)
 
-        if self._n_mu_target <= 0:
-            self._n_mu_target = n_ch_w
+        if self._n_mu == 0:
+            self._n_mu = n_ch_w
 
         # 3. ICA
         sep_mtx = torch.zeros(
-            self._n_mu_target,
+            self._n_mu,
             n_ch_w,
             dtype=emg_white.dtype,
             device=self._device,
         )
-        spike_ths = np.zeros(shape=self._n_mu_target, dtype=emg_array.dtype)
+        spike_ths = np.zeros(shape=self._n_mu, dtype=emg_array.dtype)
         ics = torch.zeros(
-            self._n_mu_target,
+            self._n_mu,
             n_samp,
             dtype=emg_white.dtype,
             device=self._device,
@@ -365,7 +363,7 @@ class EMGBSS:
         spikes_t = []
         sil_scores = []
         w_init = self._initialize_weights(emg_white)
-        for i in range(self._n_mu_target):
+        for i in range(self._n_mu):
             logging.info(f"----- IC {i + 1} -----")
             w_i = self._fast_ica_iter(emg_white, sep_mtx, w_i_init=w_init[i])
             # Solve sign uncertainty
@@ -390,7 +388,7 @@ class EMGBSS:
         # 4.1. SIL, CoV-ISI and DR thresholding
         idx_to_keep = []
         cov_isi_scores = []
-        for i in range(self._n_mu_target):
+        for i in range(self._n_mu):
             # Check SIL
             sil = sil_scores[i]
             if np.isnan(sil) or sil <= self._sil_th:
@@ -457,31 +455,27 @@ class EMGBSS:
         self._spike_ths = spike_ths[idx_to_keep]
         ics = ics[idx_to_keep]
         spikes_t = {f"MU{i}": spikes_t[f"MU{k}"] for i, k in enumerate(idx_to_keep)}
-        n_mu = len(spikes_t)
+        self._n_mu = len(spikes_t)
 
-        logging.info(f"Extracted {n_mu} MUs after replicas removal.")
+        logging.info(f"Extracted {self._n_mu} MUs after replicas removal.")
 
         # Pack results in a DataFrame
         ics = pd.DataFrame(
             data=ics.T.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
-            columns=[f"MU{i}" for i in range(n_mu)],
+            columns=[f"MU{i}" for i in range(self._n_mu)],
         )
 
         elapsed = int(round(time.time() - start))
-        hours, rem = divmod(elapsed, 3600)
-        mins, secs = divmod(rem, 60)
-        logging.info(
-            f"Decomposition performed in {hours:d}h {mins:02d}min {secs:02d}s."
-        )
+        mins, secs = divmod(elapsed, 60)
+        logging.info(f"Decomposition performed in {mins:02d}min {secs:02d}s.")
 
         return ics, spikes_t
 
     def _initialize_weights(self, emg_white: torch.Tensor) -> torch.Tensor:
         """Initialize separation vectors."""
-
         gamma = emg_white.sum(dim=0) ** 2  # activation index
-        w_init_idx = torch.topk(gamma, k=self._n_mu_target).indices
+        w_init_idx = torch.topk(gamma, k=self._n_mu).indices
         return emg_white[:, w_init_idx].T
 
     def _fast_ica_iter(

@@ -40,13 +40,13 @@ class WhiteningModel(ABC):
 
     @property
     @abstractmethod
-    def mean_vec(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated mean vector."""
+    def mean_vec(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated mean vector."""
 
     @property
     @abstractmethod
-    def white_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated whitening matrix."""
+    def white_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated whitening matrix."""
 
     @abstractmethod
     def fit(self, x: Signal) -> WhiteningModel:

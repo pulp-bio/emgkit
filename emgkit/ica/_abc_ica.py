@@ -31,8 +31,8 @@ class ICA(ABC):
 
     @property
     @abstractmethod
-    def sep_mtx(self) -> torch.Tensor | None:
-        """Tensor or None: Property for getting the estimated separation matrix."""
+    def sep_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated separation matrix."""
 
     @property
     @abstractmethod
