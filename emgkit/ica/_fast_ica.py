@@ -308,9 +308,8 @@ class FastICA(ICA):
         Tensor
             Estimated source signal with shape (n_samples, n_components).
         """
-        assert (
-            self._sep_mtx is not None
-        ), "Separation matrix is null, fit the model first."
+        is_fit = hasattr(self, "_sep_mtx")
+        assert is_fit, "Fit the model first."
 
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device)

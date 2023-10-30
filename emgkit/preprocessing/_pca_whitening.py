@@ -224,9 +224,8 @@ class PCAWhitening(WhiteningModel):
         ValueError
             If the input is not 2D.
         """
-        assert (
-            self._mean_vec is not None and self._white_mtx is not None
-        ), "Mean vector or whitening matrix are null, fit the model first."
+        is_fit = hasattr(self, "_mean_vec") and hasattr(self, "_white_mtx")
+        assert is_fit, "Fit the model first."
 
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device).T
