@@ -246,15 +246,15 @@ class PCAWhitening(WhiteningModel):
 
         # Compute eigenvectors and eigenvalues of the covariance matrix X @ X.T / n_samp
         if self._solver == "svd":
-            # The left-singular vectors of X are the eigenvectors of X @ X.T
-            # The singular values of X are the square root of the eigenvalues of X @ X.T
+            # SVD:
+            # - the left-singular vectors of X are the eigenvectors of X @ X.T
+            # - the singular values of X are the square root of the eigenvalues of X @ X.T
             self._eig_vecs, s_vals, _ = torch.linalg.svd(x_tensor, full_matrices=False)
             self._eig_vals = s_vals**2
 
             exp_var_ratio = (self._eig_vals / self._eig_vals.sum()).cpu().numpy()
             d_mtx = torch.diag(1.0 / s_vals) * sqrt(n_samp)
         else:
-            n_samp = x_tensor.size(1)
             cov_mtx = x_tensor @ x_tensor.T / n_samp
             self._eig_vecs, self._eig_vals = eigendecomposition(cov_mtx)
 
