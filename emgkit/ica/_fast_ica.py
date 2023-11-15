@@ -29,18 +29,7 @@ from .._base import Signal, signal_to_tensor
 from ..preprocessing import PCAWhitening, WhiteningModel, ZCAWhitening
 from . import contrast_functions as cf
 from ._abc_ica import ICA
-from ._warn import ConvergenceWarning
-
-
-def _sym_orth(w_: torch.Tensor) -> torch.Tensor:
-    """Helper function to perform symmetric orthogonalization."""
-    eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
-
-    # Improve numerical stability
-    eig_vals = torch.clip(eig_vals, min=torch.finfo(w_.dtype).tiny)
-
-    d_mtx = torch.diag(1.0 / torch.sqrt(eig_vals))
-    return eig_vecs @ d_mtx @ eig_vecs.T @ w_
+from ._utils import ConvergenceWarning, sym_orth
 
 
 def fast_ica(
@@ -355,7 +344,7 @@ class FastICA(ICA):
         """Helper method for symmetric algorithm."""
         n_samp = x.size(1)
 
-        w = _sym_orth(self._sep_mtx)
+        w = sym_orth(self._sep_mtx)
 
         saddle_test_done = False
         max_iter = self._max_iter
@@ -373,7 +362,7 @@ class FastICA(ICA):
                 w_new = (
                     g_res.g1_u @ x.T / n_samp - g_res.g2_u.mean(dim=1, keepdim=True) * w
                 )
-                w_new = _sym_orth(w_new)
+                w_new = sym_orth(w_new)
 
                 # Compute distance:
                 # 1. Compute absolute dot product between old and new separation vectors (i.e., the rows of W)

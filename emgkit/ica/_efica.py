@@ -31,17 +31,7 @@ from .._base import Signal, signal_to_tensor
 from ..preprocessing import PCAWhitening, WhiteningModel, ZCAWhitening
 from . import contrast_functions as cf
 from ._abc_ica import ICA
-from ._warn import ConvergenceWarning
-
-
-def _sym_orth(w_: torch.Tensor) -> torch.Tensor:
-    eig_vals, eig_vecs = torch.linalg.eigh(w_ @ w_.T)
-
-    # Improve numerical stability
-    eig_vals = torch.clip(eig_vals, min=torch.finfo(w_.dtype).tiny)
-
-    d_mtx = torch.diag(1.0 / torch.sqrt(eig_vals))
-    return eig_vecs @ d_mtx @ eig_vecs.T @ w_
+from ._utils import ConvergenceWarning, sym_orth
 
 
 def _gg_score_function(
@@ -373,7 +363,7 @@ class EFICA(ICA):
             )
 
         w_no_decorr = self._sep_mtx
-        w = _sym_orth(w_no_decorr)
+        w = sym_orth(w_no_decorr)
 
         # 1. Get initial estimation using symmetric FastICA + saddle point test
         saddle_test_done = False
@@ -392,7 +382,7 @@ class EFICA(ICA):
                     g_res.g1_u @ x_tensor.T / n_samp
                     - g_res.g2_u.mean(dim=1, keepdim=True) * w
                 )
-                w_new = _sym_orth(w_new_no_decorr)
+                w_new = sym_orth(w_new_no_decorr)
 
                 # Compute distance:
                 # 1. Compute absolute dot product between old and new separation vectors (i.e., the rows of W)
@@ -510,7 +500,7 @@ class EFICA(ICA):
             c = tau * gamma[k] / (tau[k] * (gamma + tau**2))
             c[k] = 1
             w_k = torch.diag(c) @ w
-            w_k = _sym_orth(w_k)
+            w_k = sym_orth(w_k)
             self._sep_mtx[k] = w_k[k]
         ics = self._sep_mtx @ x_tensor
 

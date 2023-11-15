@@ -1,4 +1,4 @@
-"""Custom warnings.
+"""Internal utility functins for ICA.
 
 
 Copyright 2023 Mattia Orlandi
@@ -15,6 +15,21 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+
+from __future__ import annotations
+
+import torch
+
+
+def sym_orth(w: torch.Tensor) -> torch.Tensor:
+    """Helper function to perform symmetric orthogonalization."""
+    eig_vals, eig_vecs = torch.linalg.eigh(w @ w.T)
+
+    # Improve numerical stability
+    eig_vals = torch.clip(eig_vals, min=torch.finfo(w.dtype).tiny)
+
+    d_mtx = torch.diag(1.0 / torch.sqrt(eig_vals))
+    return eig_vecs @ d_mtx @ eig_vecs.T @ w
 
 
 class ConvergenceWarning(Warning):
