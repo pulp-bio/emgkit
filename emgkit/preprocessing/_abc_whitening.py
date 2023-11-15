@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+import numpy as np
 import torch
 
 from .._base import Signal
@@ -47,6 +48,11 @@ class WhiteningModel(ABC):
     @abstractmethod
     def white_mtx(self) -> torch.Tensor:
         """Tensor: Property for getting the estimated whitening matrix."""
+
+    @property
+    @abstractmethod
+    def autocorr_mtx(self) -> np.ndarray:
+        """ndarray: Property for getting the empirical autocorrelation matrix."""
 
     @abstractmethod
     def fit(self, x: Signal) -> WhiteningModel:

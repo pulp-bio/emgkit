@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from math import sqrt
 
+import numpy as np
 import torch
 
 from .._base import Signal, signal_to_tensor
@@ -112,6 +113,11 @@ class ZCAWhitening(WhiteningModel):
         """Tensor: Property for getting the estimated whitening matrix."""
         return self._white_mtx
 
+    @property
+    def autocorr_mtx(self) -> np.ndarray:
+        """ndarray: Property for getting the empirical autocorrelation matrix."""
+        return self._autocorr_mtx
+
     def fit(self, x: Signal) -> WhiteningModel:
         """Fit the whitening model on the given signal.
 
@@ -199,6 +205,9 @@ class ZCAWhitening(WhiteningModel):
         self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
         x_tensor -= self._mean_vec
 
+        cov_mtx = x_tensor @ x_tensor.T / n_samp
+        self._autocorr_mtx = cov_mtx.cpu().numpy()
+
         # Compute eigenvectors and eigenvalues of the covariance matrix X @ X.T / n_samp
         if self._solver == "svd":
             # SVD:
@@ -209,7 +218,6 @@ class ZCAWhitening(WhiteningModel):
 
             d_mtx = torch.diag(1.0 / s_vals) * sqrt(n_samp)
         else:
-            cov_mtx = x_tensor @ x_tensor.T / n_samp
             self._eig_vecs, self._eig_vals = eigendecomposition(cov_mtx)
 
             d_mtx = torch.diag(1.0 / torch.sqrt(self._eig_vals))

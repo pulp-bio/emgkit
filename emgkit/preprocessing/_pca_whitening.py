@@ -150,6 +150,11 @@ class PCAWhitening(WhiteningModel):
         return self._white_mtx
 
     @property
+    def autocorr_mtx(self) -> np.ndarray:
+        """ndarray: Property for getting the empirical autocorrelation matrix."""
+        return self._autocorr_mtx
+
+    @property
     def n_pcs(self) -> int:
         """int: Property for getting the number of principal components."""
         return self._n_pcs
@@ -244,6 +249,9 @@ class PCAWhitening(WhiteningModel):
         self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
         x_tensor -= self._mean_vec
 
+        cov_mtx = x_tensor @ x_tensor.T / n_samp
+        self._autocorr_mtx = cov_mtx.cpu().numpy()
+
         # Compute eigenvectors and eigenvalues of the covariance matrix X @ X.T / n_samp
         if self._solver == "svd":
             # SVD:
@@ -255,7 +263,6 @@ class PCAWhitening(WhiteningModel):
             exp_var_ratio = (self._eig_vals / self._eig_vals.sum()).cpu().numpy()
             d_mtx = torch.diag(1.0 / s_vals) * sqrt(n_samp)
         else:
-            cov_mtx = x_tensor @ x_tensor.T / n_samp
             self._eig_vecs, self._eig_vals = eigendecomposition(cov_mtx)
 
             exp_var_ratio = (self._eig_vals / self._eig_vals.sum()).cpu().numpy()
