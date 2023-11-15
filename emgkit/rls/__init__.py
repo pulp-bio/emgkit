@@ -1,4 +1,4 @@
-"""Toolkit for processing and analysis of EMG signals.
+"""This package contains the implementations of RLS-based algorithms for online tracking.
 
 
 Copyright 2023 Mattia Orlandi
@@ -16,14 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from . import decomposition, ica, plotting, preprocessing, rls, spike_stats, utils
+from ._ng_rls import NatGradRLS, NatGradRLSPreWhite
+from ._pastd import PASTdW
 
-__all__ = [
-    "decomposition",
-    "ica",
-    "plotting",
-    "preprocessing",
-    "rls",
-    "spike_stats",
-    "utils",
-]
+__all__ = ["NatGradRLS", "NatGradRLSPreWhite", "PASTdW"]
