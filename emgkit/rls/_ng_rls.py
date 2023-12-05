@@ -170,8 +170,8 @@ class NatGradRLS:
         Initial W matrix with shape (n_components, n_channels).
     p_mtx_init : ndarray or Tensor
         Initial P matrix with shape (n_components, n_components).
-    cov_mtx_init : ndarray or Tensor or None, default=None
-        Initial covariance matrix with shape (n_channels, n_channels).
+    autocorr_mtx_init : ndarray or Tensor or None, default=None
+        Initial autocorrelation matrix with shape (n_channels, n_channels).
     device : device or str or None, default=None
         Torch device.
 
@@ -185,6 +185,8 @@ class NatGradRLS:
         P matrix with shape (n_components, n_components).
     _cov_mtx : Tensor
         Covariance matrix.
+    _n : int
+        Number of iterations.
     """
 
     def __init__(
@@ -194,7 +196,7 @@ class NatGradRLS:
         kurtosis: str,
         w_mtx_init: np.ndarray | torch.Tensor,
         p_mtx_init: np.ndarray | torch.Tensor,
-        cov_mtx_init: np.ndarray | torch.Tensor | None = None,
+        autocorr_mtx_init: np.ndarray | torch.Tensor | None = None,
         device: torch.device | str | None = None,
     ) -> None:
         assert kurtosis in (
@@ -224,12 +226,14 @@ class NatGradRLS:
             else p_mtx_init.clone().to(self._device)
         )
 
-        if cov_mtx_init is not None:
-            self._cov_mtx = (
-                torch.tensor(cov_mtx_init).to(self._device)
-                if isinstance(cov_mtx_init, np.ndarray)
-                else cov_mtx_init.clone().to(self._device)
+        if autocorr_mtx_init is not None:
+            self._autocorr_mtx = (
+                torch.tensor(autocorr_mtx_init).to(self._device)
+                if isinstance(autocorr_mtx_init, np.ndarray)
+                else autocorr_mtx_init.clone().to(self._device)
             )
+
+        self._n = 1
 
     @property
     def beta(self) -> float:
@@ -246,7 +250,7 @@ class NatGradRLS:
         """Tensor: Property for getting the W matrix."""
         return self._w_mtx
 
-    def process_sample(self, x: Signal, approx=False) -> torch.Tensor:
+    def process_sample(self, x: Signal) -> torch.Tensor:
         """Process a single sample and adapt internal parameters.
 
         Parameters
@@ -269,16 +273,22 @@ class NatGradRLS:
         self._p_mtx = (self._p_mtx - q_mtx @ y @ z.T @ self._p_mtx) / self._beta
         self._w_mtx += (self._p_mtx @ z @ y.T - q_mtx @ y @ z.T) @ self._w_mtx
 
-        # Update covariance matrix
-        if not hasattr(self, "_cov_mtx"):
-            self._cov_mtx = torch.zeros(
+        self._n += 1
+
+        # Update autocorrelation matrix
+        if not hasattr(self, "_autocorr_mtx"):
+            self._autocorr_mtx = torch.zeros(
                 n_ch, n_ch, dtype=torch.float32, device=self._device
             )
-        self._cov_mtx = (
-            self._beta * self._cov_mtx + (1 - self._beta) * x_tensor @ x_tensor.T
-        )
+        if self._beta == 1:  # infinite memory
+            a = (self._n - 1) / self._n
+            b = 1 / self._n
+        else:  # finite memory
+            a = self._beta
+            b = 1 - self._beta
+        self._autocorr_mtx = a * self._autocorr_mtx + b * x_tensor @ x_tensor.T
 
         # Orthogonalization
-        self._w_mtx = _sym_orth_ap(self._w_mtx, self._cov_mtx)
+        self._w_mtx = _sym_orth_ap(self._w_mtx, self._autocorr_mtx)
 
         return (self._w_mtx @ x_tensor).T
