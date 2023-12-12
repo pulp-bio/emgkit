@@ -40,11 +40,11 @@ class EMGBSS:
     ----------
     fs : float
         Sampling frequency of the signal.
-    n_mu : int or str, default="all"
+    n_mu_target : int or str, default="same_ext"
         Number of target MUs to extract:
         - if set to the string "same_ext", it will be set to the number of extended observations;
         - otherwise, it will be set to the given number.
-    f_ext_ms : float or str, default="auto"
+    f_ext_ms : float or str, default="same_n_mu"
         Extension factor for the signal (in ms):
         - if set to the string "same_n_mu", it will be set to n. of target MUs / n. of channels
         (if n_mu is "same_ext", extension will be disabled);
@@ -84,6 +84,8 @@ class EMGBSS:
     ----------
     _fs : float
         Sampling frequency of the signal.
+    _n_mu_target : int
+        Number of target MUs to extract.
     _g_func : ContrastFunction
         Contrast function.
     _conv_th : float
@@ -108,12 +110,14 @@ class EMGBSS:
         Minimum percentage of synchronized discharges for considering two MUs as duplicates.
     _dup_tol_ms : float
         Tolerance (in ms) for considering two discharges as synchronized.
+    _n_win : int
+        Number of processed windows.
     """
 
     def __init__(
         self,
         fs: float,
-        n_mu: int | str = "same_ext",
+        n_mu_target: int | str = "same_ext",
         f_ext_ms: float | str = "same_n_mu",
         g_name: str = "skewness",
         conv_th: float = 1e-4,
@@ -130,8 +134,8 @@ class EMGBSS:
         dup_perc: float = 0.3,
         dup_tol_ms: float = 0.5,
     ):
-        assert (isinstance(n_mu, int) and n_mu > 0) or (
-            isinstance(n_mu, str) and n_mu == "same_ext"
+        assert (isinstance(n_mu_target, int) and n_mu_target > 0) or (
+            isinstance(n_mu_target, str) and n_mu_target == "same_ext"
         ), 'n_mu must be either a positive integer or "same_ext".'
         assert (isinstance(f_ext_ms, float) and f_ext_ms > 0) or (
             isinstance(f_ext_ms, str) and f_ext_ms in ("same_n_mu", "auto", "none")
@@ -171,7 +175,7 @@ class EMGBSS:
         self._whiten_model: WhiteningModel = whiten_dict[whiten_alg](**whiten_kw)
 
         # Map "same_ext" -> 0
-        self._n_mu = 0 if n_mu == "same_ext" else n_mu
+        self._n_mu_target = 0 if n_mu_target == "same_ext" else n_mu_target
 
         # Map "same_n_mu" -> 0, "auto" -> -1 and "none" -> 1
         if f_ext_ms == "same_n_mu":
@@ -206,6 +210,8 @@ class EMGBSS:
         self._dup_perc = dup_perc
         self._dup_tol_ms = dup_tol_ms
 
+        self._n_win = 0
+
     @property
     def sep_mtx(self) -> torch.Tensor:
         """Tensor: Property for getting the estimated separation matrix."""
@@ -224,32 +230,18 @@ class EMGBSS:
     @property
     def n_mu(self) -> int:
         """int: Property for getting the number of identified motor units."""
-        return self._n_mu
+        return self._sep_mtx.size(0)
 
     @property
     def f_ext(self) -> int:
         """int: Property for getting the extension factor."""
         return self._f_ext
 
-    def fit(self, emg: Signal) -> EMGBSS:
-        """Fit the decomposition model on the given data.
-
-        Parameters
-        ----------
-        emg : Signal
-            EMG signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        EMGBSS
-            The fitted instance of the decomposition model.
-        """
-        # Fit the model and return self
-        self._fit_transform(emg)
-        return self
-
-    def fit_transform(self, emg: Signal) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Fit the decomposition model on the given data and compute the estimated MUAPTs.
+    def decompose_training(
+        self, emg: Signal
+    ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+        """Train the decomposition model to decompose the given EMG signal into MUAPTs.
+        Re-training is supported.
 
         Parameters
         ----------
@@ -263,62 +255,6 @@ class EMGBSS:
         dict of {str : ndarray}
             Dictionary containing the discharge times for each MU.
         """
-        # Fit the model and return result
-        return self._fit_transform(emg)
-
-    def transform(self, emg: Signal) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Compute the estimated MUAPTs using the fitted decomposition model.
-
-        Parameters
-        ----------
-        emg : Signal
-            EMG signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        DataFrame
-            A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
-        dict of {str : ndarray}
-            Dictionary containing the discharge times for each MU.
-        """
-        is_fit = (
-            hasattr(self, "_whiten_model")
-            and hasattr(self, "_sep_mtx")
-            and hasattr(self, "_spike_ths")
-        )
-        assert is_fit, "Fit the model first."
-
-        # 1. Extension
-        emg_ext = extend_signal(emg, self._f_ext)
-        n_samp = emg_ext.shape[0]
-        emg_ext = torch.from_numpy(emg_ext).to(self._device)
-
-        # 2. Whitening + ICA
-        ics = self._whiten_model.transform(emg_ext) @ self._sep_mtx.T
-
-        # 3. Spike extraction
-        spikes_t = {}
-        for i in range(self._n_mu):
-            spikes_i = utils.detect_spikes(
-                ics[:, i],
-                ref_period=self._ref_period,
-                bin_alg=self._bin_alg,
-                threshold=self._spike_ths[i].item(),
-                seed=self._prng,
-            )[0]
-            spikes_t[f"MU{i}"] = spikes_i / self._fs
-
-        # Pack results in a DataFrame
-        ics = pd.DataFrame(
-            data=ics.cpu().numpy(),
-            index=[i / self._fs for i in range(n_samp)],
-            columns=[f"MU{i}" for i in range(self._n_mu)],
-        )
-
-        return ics, spikes_t
-
-    def _fit_transform(self, emg: Signal) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Helper method for fit and fit_transform."""
         start = time.time()
 
         # Convert to array
@@ -331,7 +267,9 @@ class EMGBSS:
             self._f_ext = int(round(1000 / n_ch))
         elif self._f_ext == 0:  # "same_n_mu"
             # Check n_mu: if it's set to "same_ext", disable extension
-            self._f_ext = 1 if self._n_mu == 0 else int(round(self._n_mu / n_ch))
+            self._f_ext = (
+                1 if self._n_mu_target == 0 else int(round(self._n_mu_target / n_ch))
+            )
 
         # 1. Extension
         logging.info(f"Number of channels before extension: {n_ch}")
@@ -340,22 +278,22 @@ class EMGBSS:
         logging.info(f"Number of channels after extension: {n_ch_ext}")
 
         # 2. Whitening
-        emg_white = self._whiten_model.fit_transform(emg_ext).T
+        emg_white = self._whiten_model.whiten_training(emg_ext).T
         n_ch_w = emg_white.size(0)
 
-        if self._n_mu == 0:
-            self._n_mu = n_ch_w
+        if self._n_mu_target == 0:
+            self._n_mu_target = n_ch_w
 
         # 3. ICA
         sep_mtx = torch.zeros(
-            self._n_mu,
+            self._n_mu_target,
             n_ch_w,
             dtype=emg_white.dtype,
             device=self._device,
         )
-        spike_ths = np.zeros(shape=self._n_mu, dtype=emg_array.dtype)
+        spike_ths = np.zeros(shape=self._n_mu_target, dtype=emg_array.dtype)
         ics = torch.zeros(
-            self._n_mu,
+            self._n_mu_target,
             n_samp,
             dtype=emg_white.dtype,
             device=self._device,
@@ -363,7 +301,7 @@ class EMGBSS:
         spikes_t = []
         sil_scores = []
         w_init = self._initialize_weights(emg_white)
-        for i in range(self._n_mu):
+        for i in range(self._n_mu_target):
             logging.info(f"----- IC {i + 1} -----")
             w_i = self._fast_ica_iter(emg_white, sep_mtx, w_i_init=w_init[i])
             # Solve sign uncertainty
@@ -388,7 +326,7 @@ class EMGBSS:
         # 4.1. SIL, CoV-ISI and DR thresholding
         idx_to_keep = []
         cov_isi_scores = []
-        for i in range(self._n_mu):
+        for i in range(self._n_mu_target):
             # Check SIL
             sil = sil_scores[i]
             if np.isnan(sil) or sil <= self._sil_th:
@@ -455,15 +393,15 @@ class EMGBSS:
         self._spike_ths = spike_ths[idx_to_keep]
         ics = ics[idx_to_keep]
         spikes_t = {f"MU{i}": spikes_t[f"MU{k}"] for i, k in enumerate(idx_to_keep)}
-        self._n_mu = len(spikes_t)
+        self._n_mu_target = len(spikes_t)
 
-        logging.info(f"Extracted {self._n_mu} MUs after replicas removal.")
+        logging.info(f"Extracted {self._n_mu_target} MUs after replicas removal.")
 
         # Pack results in a DataFrame
         ics = pd.DataFrame(
             data=ics.T.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
-            columns=[f"MU{i}" for i in range(self._n_mu)],
+            columns=[f"MU{i}" for i in range(self._n_mu_target)],
         )
 
         elapsed = int(round(time.time() - start))
@@ -472,10 +410,63 @@ class EMGBSS:
 
         return ics, spikes_t
 
+    def decompose_inference(
+        self, emg: Signal
+    ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+        """Decompose the given EMG signal into MUAPTs using the frozen decomposition model.
+
+        Parameters
+        ----------
+        emg : Signal
+            EMG signal with shape (n_samples, n_channels).
+
+        Returns
+        -------
+        DataFrame
+            A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
+        dict of {str : ndarray}
+            Dictionary containing the discharge times for each MU.
+        """
+        is_calibrated = (
+            hasattr(self, "_whiten_model")
+            and hasattr(self, "_sep_mtx")
+            and hasattr(self, "_spike_ths")
+        )
+        assert is_calibrated, "Fit the model first."
+
+        # 1. Extension
+        emg_ext = extend_signal(emg, self._f_ext)
+        n_samp = emg_ext.shape[0]
+        emg_ext = torch.from_numpy(emg_ext).to(self._device)
+
+        # 2. Whitening + ICA
+        ics = self._whiten_model.whiten_inference(emg_ext) @ self._sep_mtx.T
+
+        # 3. Spike extraction
+        spikes_t = {}
+        for i in range(self._n_mu_target):
+            spikes_i = utils.detect_spikes(
+                ics[:, i],
+                ref_period=self._ref_period,
+                bin_alg=self._bin_alg,
+                threshold=self._spike_ths[i].item(),
+                seed=self._prng,
+            )[0]
+            spikes_t[f"MU{i}"] = spikes_i / self._fs
+
+        # Pack results in a DataFrame
+        ics = pd.DataFrame(
+            data=ics.cpu().numpy(),
+            index=[i / self._fs for i in range(n_samp)],
+            columns=[f"MU{i}" for i in range(self._n_mu_target)],
+        )
+
+        return ics, spikes_t
+
     def _initialize_weights(self, emg_white: torch.Tensor) -> torch.Tensor:
         """Initialize separation vectors."""
         gamma = emg_white.sum(dim=0) ** 2  # activation index
-        w_init_idx = torch.topk(gamma, k=self._n_mu).indices
+        w_init_idx = torch.topk(gamma, k=self._n_mu_target).indices
         return emg_white[:, w_init_idx].T
 
     def _fast_ica_iter(

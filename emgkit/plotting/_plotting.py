@@ -35,11 +35,11 @@ from .._base import Signal
 from ..spike_stats import instantaneous_discharge_rate, smoothed_discharge_rate
 from ..utils import sparse_to_dense
 
-# Set Seaborn default theme
-sns.set_theme()
+# Set Seaborn style
+sns.set_theme(style="whitegrid")
 
 
-def _plot_signal_complete(
+def _plot_signal(
     s_df: pd.DataFrame,
     labels: pd.Series | None,
     title: str | None = None,
@@ -103,7 +103,7 @@ def _plot_signal_complete(
             axes[i].plot(s_df[ch_i])
 
 
-def _plot_signal_compact(
+def _plot_signal_heatmap(
     s_df: pd.DataFrame,
     labels: pd.Series | None,
     title: str | None = None,
@@ -112,7 +112,7 @@ def _plot_signal_compact(
     fig_size: tuple[int, int] | None = None,
     resolution: int | None = None,
 ) -> None:
-    """Helper function to plot a signal with multiple channels in a compact way, i.e., by plotting a heatmap."""
+    """Helper function to plot a signal with multiple channels as a compact heatmap."""
     cmap = "icefire" if (s_df.min() < 0).any() else "magma"
 
     # Rolling mean
@@ -208,7 +208,7 @@ def plot_signal(
     s: Signal,
     fs: float = 1.0,
     labels: np.ndarray | pd.Series | None = None,
-    style: str = "complete",
+    as_heatmap: bool = False,
     title: str | None = None,
     x_label: str = "Time [s]",
     y_label: str = "Amplitude [a.u.]",
@@ -226,8 +226,8 @@ def plot_signal(
         Sampling frequency of the signal (relevant if s is a NumPy array).
     labels : ndarray or Series or None, default=None
         NumPy array or Series containing a label for each sample.
-    style : {"complete", "compact"}
-        Style of the plot (either "complete" or "compact").
+    as_heatmap : bool, default=False
+        Whether to plot a compact heatmap or the complete signal.
     title : str or None, default=None
         Title of the plot.
     x_label : str, default="Time [s]"
@@ -241,11 +241,6 @@ def plot_signal(
     resolution : int or None, default=None
         Resolution of the heatmap (relevant only for compact style).
     """
-    assert style in (
-        "compact",
-        "complete",
-    ), 'The plot style must be either "compact" or "complete".'
-
     # Convert signal to DataFrame
     if isinstance(s, pd.DataFrame):
         s_df = s
@@ -257,12 +252,19 @@ def plot_signal(
             s_array = s_array.reshape(-1, 1)
         s_df = pd.DataFrame(s_array, index=np.arange(s_array.shape[0]) / fs)
 
+    # Convert labels to Series
+    labels_s = pd.Series(labels) if isinstance(labels, np.ndarray) else labels
+
     # Plot signal
+    if as_heatmap:
+        _plot_signal_heatmap(
+            s_df, labels_s, title, x_label, y_label, fig_size, resolution
+        )
+    else:
+        _plot_signal(s_df, labels_s, title, x_label, y_label, fig_size)
     args = [s_df, labels, title, x_label, y_label, fig_size]
-    if style == "compact":
+    if as_heatmap:
         args.append(resolution)
-    plot_helper = {"compact": _plot_signal_compact, "complete": _plot_signal_complete}
-    plot_helper[style](*args)
 
     # Show or save plot
     if file_name is not None:
@@ -329,51 +331,6 @@ def plot_waveforms(
         plt.show()
 
 
-def plot_ic_spikes(
-    ics: pd.DataFrame,
-    spikes_t: dict[str, np.ndarray],
-    fig_size: tuple[int, int] | None = None,
-    file_name: str | None = None,
-) -> None:
-    """Plot the given ICs and spikes.
-
-    Parameters
-    ----------
-    ics : DataFrame
-        A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
-    spikes_t : dict of {str : ndarray}
-        Dictionary containing the discharge times for each MU.
-    fig_size : tuple of (int, int) or None, default=None
-        Height and width of the plot.
-    file_name : str or None, default=None
-        Name of the file where the image will be saved to.
-    """
-    assert ics.shape[1] == len(
-        spikes_t
-    ), "The number of ICs must match the number of spike trains."
-
-    f, axes = plt.subplots(
-        nrows=len(spikes_t),
-        sharex="all",
-        squeeze=False,
-        figsize=fig_size,
-        layout="constrained",
-    )
-    axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
-    f.suptitle("ICs spike trains")
-    f.supxlabel("Time [s]")
-    f.supylabel("Amplitude [a.u.]")
-
-    for i, mu in enumerate(spikes_t):
-        axes[i].plot(ics[mu])
-        axes[i].plot(spikes_t[mu], ics[mu].loc[spikes_t[mu]], "x")
-
-    if file_name is not None:
-        plt.savefig(file_name)
-    else:
-        plt.show()
-
-
 def plot_correlation(
     s: Signal,
     write_annotations: bool = False,
@@ -419,6 +376,51 @@ def plot_correlation(
         plt.show()
 
 
+def plot_ic_spikes(
+    ics: pd.DataFrame,
+    spikes_t: dict[str, np.ndarray],
+    fig_size: tuple[int, int] | None = None,
+    file_name: str | None = None,
+) -> None:
+    """Plot the given ICs and spikes.
+
+    Parameters
+    ----------
+    ics : DataFrame
+        A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
+    spikes_t : dict of {str : ndarray}
+        Dictionary containing the discharge times for each MU.
+    fig_size : tuple of (int, int) or None, default=None
+        Height and width of the plot.
+    file_name : str or None, default=None
+        Name of the file where the image will be saved to.
+    """
+    assert ics.shape[1] == len(
+        spikes_t
+    ), "The number of ICs must match the number of spike trains."
+
+    f, axes = plt.subplots(
+        nrows=len(spikes_t),
+        sharex="all",
+        squeeze=False,
+        figsize=fig_size,
+        layout="constrained",
+    )
+    axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
+    f.suptitle("ICs spike trains")
+    f.supxlabel("Time [s]")
+    f.supylabel("Amplitude [a.u.]")
+
+    for i, mu in enumerate(spikes_t):
+        axes[i].plot(ics[mu])
+        axes[i].plot(spikes_t[mu], ics[mu].loc[spikes_t[mu]], "x")
+
+    if file_name is not None:
+        plt.savefig(file_name)
+    else:
+        plt.show()
+
+
 def raster_plot(
     spikes_t: dict[str, np.ndarray],
     fig_size: tuple[int, int] | None = None,
@@ -444,7 +446,7 @@ def raster_plot(
     for i, mu in enumerate(spikes_t.keys()):
         ax.scatter(
             x=spikes_t[mu],
-            y=[i + 1] * spikes_t[mu].size,
+            y=[len(spikes_t) - i] * spikes_t[mu].size,
             marker="|",
         )
 

@@ -70,7 +70,7 @@ def pca_whitening(
         If the input is not 2D.
     """
     whiten_model = PCAWhitening(n_pcs, keep_dim, solver, device)
-    x_w = whiten_model.fit_transform(x)
+    x_w = whiten_model.whiten_training(x)
 
     return x_w, whiten_model
 
@@ -101,6 +101,8 @@ class PCAWhitening(WhiteningModel):
         The solver used for whitening, either "svd" (default) or "eigh".
     _device : device or None
         Torch device.
+    _n_win : int
+        Number of processed windows.
     """
 
     def __init__(
@@ -128,6 +130,8 @@ class PCAWhitening(WhiteningModel):
         self._keep_dim = keep_dim
         self._solver = solver
         self._device = torch.device(device) if isinstance(device, str) else device
+
+        self._n_win = 0
 
     @property
     def eig_vecs(self) -> torch.Tensor:
@@ -164,31 +168,9 @@ class PCAWhitening(WhiteningModel):
         """Tensor: Property for getting the vector of explained variance ratio."""
         return self._exp_var_ratio
 
-    def fit(self, x: Signal) -> WhiteningModel:
-        """Fit the whitening model on the given signal.
-
-        Parameters
-        ----------
-        x : Signal
-            A signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        WhiteningModel
-            The fitted whitening model.
-
-        Raises
-        ------
-        TypeError
-            If the input is neither an array, a DataFrame nor a Tensor.
-        ValueError
-            If the input is not 2D.
-        """
-        self._fit_transform(x)
-        return self
-
-    def fit_transform(self, x: Signal) -> torch.Tensor:
-        """Fit the whitening model on the given signal and return the whitened signal.
+    def whiten_training(self, x: Signal) -> torch.Tensor:
+        """Train the whitening model to whiten the given signal.
+        Re-training is supported.
 
         Parameters
         ----------
@@ -198,7 +180,7 @@ class PCAWhitening(WhiteningModel):
         Returns
         -------
         Tensor
-            Whitened signal with shape (n_samples, n_components).
+            White signal with shape (n_samples, n_components).
 
         Raises
         ------
@@ -207,50 +189,33 @@ class PCAWhitening(WhiteningModel):
         ValueError
             If the input is not 2D.
         """
-        return self._fit_transform(x)
+        momentum = self._n_win / (self._n_win + 1)  # tends to 1
 
-    def transform(self, x: Signal) -> torch.Tensor:
-        """Whiten the given signal using the fitted whitening model.
-
-        Parameters
-        ----------
-        x : Signal
-            A signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        Tensor
-            Whitened signal with shape (n_samples, n_components).
-
-        Raises
-        ------
-        TypeError
-            If the input is neither an array, a DataFrame nor a Tensor.
-        ValueError
-            If the input is not 2D.
-        """
-        is_fit = hasattr(self, "_mean_vec") and hasattr(self, "_white_mtx")
-        assert is_fit, "Fit the model first."
-
-        # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device).T
-
-        # Center and whiten signal
-        x_tensor -= self._mean_vec
-        x_w = self._white_mtx @ x_tensor
-
-        return x_w.T
-
-    def _fit_transform(self, x: Signal) -> torch.Tensor:
-        """Helper method for fit and fit_transform."""
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device).T
         n_ch, n_samp = x_tensor.size()
-        self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
+
+        # Centering
+        if self._n_win == 0:  # first training
+            self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
+        else:  # re-training
+            mean_vec_old = self._mean_vec
+            mean_vec_new = x_tensor.mean(dim=1, keepdim=True)
+
+            self._mean_vec = momentum * mean_vec_old + (1 - momentum) * mean_vec_new
         x_tensor -= self._mean_vec
 
-        cov_mtx = x_tensor @ x_tensor.T / n_samp
+        # Compute covariance matrix
+        if self._n_win == 0:  # first training
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+        else:  # re-training
+            cov_mtx_old = torch.as_tensor(self._autocorr_mtx, device=self._device)
+            cov_mtx_new = x_tensor @ x_tensor.T / n_samp
+
+            cov_mtx = momentum * cov_mtx_old + (1 - momentum) * cov_mtx_new
         self._autocorr_mtx = cov_mtx.cpu().numpy()
+
+        self._n_win += 1
 
         # Compute eigenvectors and eigenvalues of the covariance matrix X @ X.T / n_samp
         if self._solver == "svd":
@@ -289,6 +254,38 @@ class PCAWhitening(WhiteningModel):
         if self._keep_dim:  # re-project to original dimensionality
             self._white_mtx = self._eig_vecs @ self._white_mtx
             logging.info(f"Re-projecting dimensionality to {self._white_mtx.size(0)}.")
+        x_w = self._white_mtx @ x_tensor
+
+        return x_w.T
+
+    def whiten_inference(self, x: Signal) -> torch.Tensor:
+        """Whiten the given signal using the frozen whitening model.
+
+        Parameters
+        ----------
+        x : Signal
+            A signal with shape (n_samples, n_channels).
+
+        Returns
+        -------
+        Tensor
+            White signal with shape (n_samples, n_components).
+
+        Raises
+        ------
+        TypeError
+            If the input is neither an array, a DataFrame nor a Tensor.
+        ValueError
+            If the input is not 2D.
+        """
+        is_fit = hasattr(self, "_mean_vec") and hasattr(self, "_white_mtx")
+        assert is_fit, "Fit the model first."
+
+        # Convert input to Tensor
+        x_tensor = signal_to_tensor(x, self._device).T
+
+        # Center and whiten signal
+        x_tensor -= self._mean_vec
         x_w = self._white_mtx @ x_tensor
 
         return x_w.T

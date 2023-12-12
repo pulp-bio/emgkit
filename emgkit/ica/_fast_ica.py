@@ -102,7 +102,7 @@ def fast_ica(
         seed,
         **kwargs,
     )
-    ics = ica_model.fit_transform(x)
+    ics = ica_model.decompose_training(x)
 
     return ics, ica_model
 
@@ -243,29 +243,8 @@ class FastICA(ICA):
         """WhiteningModel or None: Property for getting the whitening model."""
         return self._whiten_model
 
-    def fit(self, x: Signal) -> ICA:
-        """Fit the ICA model on the given signal.
-
-        Parameters
-        ----------
-        x : Signal
-            A signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        ICA
-            The fitted ICA model.
-
-        Warns
-        -----
-        ConvergenceWarning
-            The algorithm didn't converge.
-        """
-        self._fit_transform(x)
-        return self
-
-    def fit_transform(self, x: Signal) -> torch.Tensor:
-        """Fit the ICA model on the given signal and return the estimated ICs.
+    def decompose_training(self, x: Signal) -> torch.Tensor:
+        """Train the ICA model to decompose the given signal into independent components (ICs).
 
         Parameters
         ----------
@@ -275,50 +254,19 @@ class FastICA(ICA):
         Returns
         -------
         Tensor
-            Estimated source signal with shape (n_samples, n_components).
+            Estimated ICs with shape (n_samples, n_components).
 
         Warns
         -----
         ConvergenceWarning
             The algorithm didn't converge.
         """
-        return self._fit_transform(x)
-
-    def transform(self, x: Signal) -> torch.Tensor:
-        """Decompose the given signal using the fitted ICA model.
-
-        Parameters
-        ----------
-        x : Signal
-            A signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        Tensor
-            Estimated source signal with shape (n_samples, n_components).
-        """
-        is_fit = hasattr(self, "_sep_mtx")
-        assert is_fit, "Fit the model first."
-
-        # Convert input to Tensor
-        x_tensor = signal_to_tensor(x, self._device)
-
-        # Decompose signal
-        if self._whiten_model is not None:
-            ics = self._whiten_model.transform(x_tensor) @ self._sep_mtx.T
-        else:
-            ics = x_tensor @ self._sep_mtx.T
-
-        return ics
-
-    def _fit_transform(self, x: Signal) -> torch.Tensor:
-        """Helper method for fit and fit_transform."""
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device)
 
         # Whitening
         if self._whiten_model is not None:
-            x_tensor = self._whiten_model.fit_transform(x_tensor)
+            x_tensor = self._whiten_model.whiten_training(x_tensor)
         x_tensor = x_tensor.T
 
         n_ch = x_tensor.size(0)
@@ -339,6 +287,33 @@ class FastICA(ICA):
         ics = self._sep_mtx @ x_tensor
 
         return ics.T
+
+    def decompose_inference(self, x: Signal) -> torch.Tensor:
+        """Decompose the given signal into independent components (ICs) using the frozen ICA model.
+
+        Parameters
+        ----------
+        x : Signal
+            A signal with shape (n_samples, n_channels).
+
+        Returns
+        -------
+        Tensor
+            Estimated ICs with shape (n_samples, n_components).
+        """
+        is_fit = hasattr(self, "_sep_mtx")
+        assert is_fit, "Fit the model first."
+
+        # Convert input to Tensor
+        x_tensor = signal_to_tensor(x, self._device)
+
+        # Decompose signal
+        if self._whiten_model is not None:
+            ics = self._whiten_model.whiten_inference(x_tensor) @ self._sep_mtx.T
+        else:
+            ics = x_tensor @ self._sep_mtx.T
+
+        return ics
 
     def _symmetric(self, x: torch.Tensor) -> torch.Tensor:
         """Helper method for symmetric algorithm."""

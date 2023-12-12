@@ -40,28 +40,8 @@ class ICA(ABC):
         """WhiteningModel or None: Property for getting the whitening model."""
 
     @abstractmethod
-    def fit(self, x: Signal) -> ICA:
-        """Fit the ICA model on the given signal.
-
-        Parameters
-        ----------
-        x : Signal
-            A signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        ICA
-            The fitted ICA model.
-
-        Warns
-        -----
-        ConvergenceWarning
-            The algorithm didn't converge.
-        """
-
-    @abstractmethod
-    def fit_transform(self, x: Signal) -> torch.Tensor:
-        """Fit the ICA model on the given signal and return the estimated sources.
+    def decompose_training(self, x: Signal) -> torch.Tensor:
+        """Train the ICA model to decompose the given signal into independent components (ICs).
 
         Parameters
         ----------
@@ -71,7 +51,7 @@ class ICA(ABC):
         Returns
         -------
         Tensor
-            Estimated source signal with shape (n_samples, n_components).
+            Estimated ICs with shape (n_samples, n_components).
 
         Warns
         -----
@@ -80,8 +60,8 @@ class ICA(ABC):
         """
 
     @abstractmethod
-    def transform(self, x: Signal) -> torch.Tensor:
-        """Decompose the given signal using the fitted ICA model.
+    def decompose_inference(self, x: Signal) -> torch.Tensor:
+        """Decompose the given signal into independent components (ICs) using the frozen ICA model.
 
         Parameters
         ----------
@@ -91,5 +71,5 @@ class ICA(ABC):
         Returns
         -------
         Tensor
-            Estimated source signal with shape (n_samples, n_components).
+            Estimated ICs with shape (n_samples, n_components).
         """

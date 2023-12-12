@@ -55,8 +55,9 @@ class WhiteningModel(ABC):
         """ndarray: Property for getting the empirical autocorrelation matrix."""
 
     @abstractmethod
-    def fit(self, x: Signal) -> WhiteningModel:
-        """Fit the whitening model on the given signal.
+    def whiten_training(self, x: Signal) -> torch.Tensor:
+        """Train the whitening model to whiten the given signal.
+        Re-training is supported.
 
         Parameters
         ----------
@@ -65,8 +66,8 @@ class WhiteningModel(ABC):
 
         Returns
         -------
-        WhiteningModel
-            The fitted whitening model.
+        Tensor
+            White signal with shape (n_samples, n_components).
 
         Raises
         ------
@@ -77,8 +78,8 @@ class WhiteningModel(ABC):
         """
 
     @abstractmethod
-    def fit_transform(self, x: Signal) -> torch.Tensor:
-        """Fit the whitening model on the given signal and return the whitened signal.
+    def whiten_inference(self, x: Signal) -> torch.Tensor:
+        """Whiten the given signal using the frozen whitening model.
 
         Parameters
         ----------
@@ -88,29 +89,7 @@ class WhiteningModel(ABC):
         Returns
         -------
         Tensor
-            Whitened signal with shape (n_samples, n_components).
-
-        Raises
-        ------
-        TypeError
-            If the input is neither an array, a DataFrame/Series nor a Tensor.
-        ValueError
-            If the input is not 2D.
-        """
-
-    @abstractmethod
-    def transform(self, x: Signal) -> torch.Tensor:
-        """Whiten the given signal using the fitted whitening model.
-
-        Parameters
-        ----------
-        x : Signal
-            A signal with shape (n_samples, n_channels).
-
-        Returns
-        -------
-        Tensor
-            Whitened signal with shape (n_samples, n_components).
+            White signal with shape (n_samples, n_components).
 
         Raises
         ------
