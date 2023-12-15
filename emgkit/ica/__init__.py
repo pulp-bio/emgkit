@@ -17,7 +17,7 @@ limitations under the License.
 """
 
 from ._abc_ica import ICA
-from ._efica import EFICA, efica
-from ._fast_ica import FastICA, fast_ica
+from ._efica import EFICA
+from ._fast_ica import FastICA
 
-__all__ = ["ICA", "EFICA", "efica", "FastICA", "fast_ica"]
+__all__ = ["ICA", "EFICA", "FastICA"]

@@ -25,8 +25,8 @@ from ._filtering import (
     highpass_filter,
     lowpass_filter,
 )
-from ._pca_whitening import PCAWhitening, pca_whitening
-from ._zca_whitening import ZCAWhitening, zca_whitening
+from ._pca_whitening import PCAWhitening
+from ._zca_whitening import ZCAWhitening
 
 __all__ = [
     "WhiteningModel",
@@ -36,7 +36,5 @@ __all__ = [
     "highpass_filter",
     "lowpass_filter",
     "PCAWhitening",
-    "pca_whitening",
     "ZCAWhitening",
-    "zca_whitening",
 ]

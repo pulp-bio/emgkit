@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-import numpy as np
 import torch
 
 from .._base import Signal
@@ -28,16 +27,6 @@ from .._base import Signal
 
 class WhiteningModel(ABC):
     """Interface for performing whitening."""
-
-    @property
-    @abstractmethod
-    def eig_vecs(self) -> torch.Tensor:
-        """Tensor: Property for getting the matrix of eigenvectors."""
-
-    @property
-    @abstractmethod
-    def eig_vals(self) -> torch.Tensor:
-        """Tensor: Property for getting the vector of eigenvalues."""
 
     @property
     @abstractmethod
@@ -51,13 +40,13 @@ class WhiteningModel(ABC):
 
     @property
     @abstractmethod
-    def autocorr_mtx(self) -> np.ndarray:
-        """ndarray: Property for getting the empirical autocorrelation matrix."""
+    def cov_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the covariance matrix."""
 
     @abstractmethod
     def whiten_training(self, x: Signal) -> torch.Tensor:
-        """Train the whitening model to whiten the given signal.
-        Re-training is supported.
+        """Train the whitening model to whiten the given signal. If called multiple times,
+        the model updates its internal parameters without forgetting the previous history.
 
         Parameters
         ----------

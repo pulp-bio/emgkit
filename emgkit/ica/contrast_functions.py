@@ -49,7 +49,7 @@ ContrastFunction = Callable[[torch.Tensor], ContrastFunctionResult]
 
 
 def logcosh(u: torch.Tensor) -> ContrastFunctionResult:
-    """Function implementing the 'tanh' nonlinearity.
+    """Function implementing the 'tanh' non-linearity.
 
     Parameters
     ----------
@@ -69,7 +69,7 @@ def logcosh(u: torch.Tensor) -> ContrastFunctionResult:
 
 
 def gauss(u: torch.Tensor) -> ContrastFunctionResult:
-    """Function implementing the 'gauss' nonlinearity.
+    """Function implementing the 'gauss' non-linearity.
 
     Parameters
     ----------
@@ -90,7 +90,7 @@ def gauss(u: torch.Tensor) -> ContrastFunctionResult:
 
 
 def kurtosis(u: torch.Tensor) -> ContrastFunctionResult:
-    """Function implementing the 'kurtosis' nonlinearity.
+    """Function implementing the 'kurtosis' non-linearity.
 
     Parameters
     ----------
@@ -111,7 +111,7 @@ def kurtosis(u: torch.Tensor) -> ContrastFunctionResult:
 
 
 def skewness(u: torch.Tensor) -> ContrastFunctionResult:
-    """Function implementing the 'skewness' nonlinearity.
+    """Function implementing the 'skewness' non-linearity.
 
     Parameters
     ----------
@@ -132,7 +132,7 @@ def skewness(u: torch.Tensor) -> ContrastFunctionResult:
 
 
 def rati(u: torch.Tensor) -> ContrastFunctionResult:
-    """Function implementing the 'rati' nonlinearity.
+    """Function implementing the 'rati' non-linearity.
 
     Parameters
     ----------

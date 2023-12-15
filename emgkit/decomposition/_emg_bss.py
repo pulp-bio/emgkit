@@ -51,7 +51,7 @@ class EMGBSS:
         - if set to the string "auto", it will be set to 1000 / n. of channels;
         - if set to the string "none", the signal won't be extended;
         - otherwise, it will be set to the given value.
-    g_name : {"skewness", "logcosh", "gauss", "kurtosis", "rati"}, default="skewness"
+    g_name : {"logcosh", "skewness", "gauss", "kurtosis", "rati"}, default="logcosh"
         Name of the contrast function.
     conv_th : float, default=1e-4
         Threshold for convergence.
@@ -67,7 +67,7 @@ class EMGBSS:
         Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
-    whiten_alg : {"pca", "zca"}, default="pca"
+    whiten_alg : {"zca", "pca"}, default="zca"
         Whitening algorithm.
     whiten_kw : dict or None, default=None
         Whitening arguments.
@@ -110,8 +110,6 @@ class EMGBSS:
         Minimum percentage of synchronized discharges for considering two MUs as duplicates.
     _dup_tol_ms : float
         Tolerance (in ms) for considering two discharges as synchronized.
-    _n_win : int
-        Number of processed windows.
     """
 
     def __init__(
@@ -119,7 +117,7 @@ class EMGBSS:
         fs: float,
         n_mu_target: int | str = "same_ext",
         f_ext_ms: float | str = "same_n_mu",
-        g_name: str = "skewness",
+        g_name: str = "logcosh",
         conv_th: float = 1e-4,
         max_iter: int = 100,
         sil_th: float = 0.85,
@@ -127,7 +125,7 @@ class EMGBSS:
         dr_th: float = 5.0,
         device: torch.device | str | None = None,
         seed: int | None = None,
-        whiten_alg: str = "pca",
+        whiten_alg: str = "zca",
         whiten_kw: dict | None = None,
         bin_alg: str = "kmeans",
         ref_period_ms: float = 20.0,
@@ -141,21 +139,21 @@ class EMGBSS:
             isinstance(f_ext_ms, str) and f_ext_ms in ("same_n_mu", "auto", "none")
         ), 'f_ext_ms must be either a positive float, "same_n_mu", "auto" or "none".'
         assert g_name in (
-            "skewness",
             "logcosh",
+            "skewness",
             "gauss",
             "kurtosis",
             "rati",
         ), (
-            'Contrast function can be either "skewness", "logcosh", "gauss", "kurtosis" or "rati": '
+            'Contrast function can be either "logcosh", "skewness", "gauss", "kurtosis" or "rati": '
             f'the provided one was "{g_name}".'
         )
         assert conv_th > 0, "Convergence threshold must be positive."
         assert max_iter > 0, "The maximum n. of iterations must be positive."
         assert whiten_alg in (
-            "pca",
             "zca",
-        ), f'Whitening algorithm must be either "pca" or "zca": the provided one was {whiten_alg}'
+            "pca",
+        ), f'Whitening algorithm must be either "zca" or "pca": the provided one was {whiten_alg}'
         assert bin_alg in (
             "kmeans",
             "otsu",
@@ -188,8 +186,8 @@ class EMGBSS:
             self._f_ext = int(round(f_ext_ms / 1000 * fs))
 
         g_dict = {
-            "skewness": cf.skewness,
             "logcosh": cf.logcosh,
+            "skewness": cf.skewness,
             "gauss": cf.gauss,
             "kurtosis": cf.kurtosis,
             "rati": cf.rati,
@@ -210,17 +208,20 @@ class EMGBSS:
         self._dup_perc = dup_perc
         self._dup_tol_ms = dup_tol_ms
 
-        self._n_win = 0
+        self._n_mu = 0
 
-    @property
-    def sep_mtx(self) -> torch.Tensor:
-        """Tensor: Property for getting the estimated separation matrix."""
-        return self._sep_mtx
+        self._sep_mtx: torch.Tensor = None  # type: ignore
+        self._spike_ths: np.ndarray = None  # type: ignore
 
     @property
     def whiten_model(self) -> WhiteningModel:
         """WhiteningModel: Property for getting the whitening model."""
         return self._whiten_model
+
+    @property
+    def sep_mtx(self) -> torch.Tensor:
+        """Tensor: Property for getting the estimated separation matrix."""
+        return self._sep_mtx
 
     @property
     def spike_ths(self) -> np.ndarray:
@@ -230,7 +231,7 @@ class EMGBSS:
     @property
     def n_mu(self) -> int:
         """int: Property for getting the number of identified motor units."""
-        return self._sep_mtx.size(0)
+        return self._n_mu
 
     @property
     def f_ext(self) -> int:
@@ -240,8 +241,8 @@ class EMGBSS:
     def decompose_training(
         self, emg: Signal
     ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Train the decomposition model to decompose the given EMG signal into MUAPTs.
-        Re-training is supported.
+        """Train the decomposition model to decompose the given EMG signal into MUAPTs. If called multiple times,
+        the model updates its internal parameters without forgetting the previous history.
 
         Parameters
         ----------
@@ -303,7 +304,13 @@ class EMGBSS:
         w_init = self._initialize_weights(emg_white)
         for i in range(self._n_mu_target):
             logging.info(f"----- IC {i + 1} -----")
-            w_i = self._fast_ica_iter(emg_white, sep_mtx, w_i_init=w_init[i])
+
+            if i < self._n_mu:  # ICs from previous training
+                w_init_i = self._sep_mtx[i]  # initialize with old separation vector
+            else:  # ICs from current training
+                w_init_i = w_init[i - self._n_mu]
+
+            w_i = self._fast_ica_iter(emg_white, sep_mtx, w_i_init=w_init_i)
             # Solve sign uncertainty
             ic_i = w_i @ emg_white
             if (ic_i**3).mean() < 0:
@@ -393,15 +400,15 @@ class EMGBSS:
         self._spike_ths = spike_ths[idx_to_keep]
         ics = ics[idx_to_keep]
         spikes_t = {f"MU{i}": spikes_t[f"MU{k}"] for i, k in enumerate(idx_to_keep)}
-        self._n_mu_target = len(spikes_t)
+        self._n_mu = len(spikes_t)
 
-        logging.info(f"Extracted {self._n_mu_target} MUs after replicas removal.")
+        logging.info(f"Extracted {self._n_mu} MUs after replicas removal.")
 
         # Pack results in a DataFrame
         ics = pd.DataFrame(
             data=ics.T.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
-            columns=[f"MU{i}" for i in range(self._n_mu_target)],
+            columns=[f"MU{i}" for i in range(self._n_mu)],
         )
 
         elapsed = int(round(time.time() - start))
@@ -427,12 +434,8 @@ class EMGBSS:
         dict of {str : ndarray}
             Dictionary containing the discharge times for each MU.
         """
-        is_calibrated = (
-            hasattr(self, "_whiten_model")
-            and hasattr(self, "_sep_mtx")
-            and hasattr(self, "_spike_ths")
-        )
-        assert is_calibrated, "Fit the model first."
+        is_fit = self._sep_mtx is not None and self._spike_ths is not None
+        assert is_fit, "Fit the model first."
 
         # 1. Extension
         emg_ext = extend_signal(emg, self._f_ext)
@@ -444,7 +447,7 @@ class EMGBSS:
 
         # 3. Spike extraction
         spikes_t = {}
-        for i in range(self._n_mu_target):
+        for i in range(self._n_mu):
             spikes_i = utils.detect_spikes(
                 ics[:, i],
                 ref_period=self._ref_period,
@@ -458,7 +461,7 @@ class EMGBSS:
         ics = pd.DataFrame(
             data=ics.cpu().numpy(),
             index=[i / self._fs for i in range(n_samp)],
-            columns=[f"MU{i}" for i in range(self._n_mu_target)],
+            columns=[f"MU{i}" for i in range(self._n_mu)],
         )
 
         return ics, spikes_t
@@ -466,7 +469,7 @@ class EMGBSS:
     def _initialize_weights(self, emg_white: torch.Tensor) -> torch.Tensor:
         """Initialize separation vectors."""
         gamma = emg_white.sum(dim=0) ** 2  # activation index
-        w_init_idx = torch.topk(gamma, k=self._n_mu_target).indices
+        w_init_idx = torch.topk(gamma, k=self._n_mu_target - self._n_mu).indices
         return emg_white[:, w_init_idx].T
 
     def _fast_ica_iter(

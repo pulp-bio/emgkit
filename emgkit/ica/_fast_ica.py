@@ -32,81 +32,6 @@ from ._abc_ica import ICA
 from ._utils import ConvergenceWarning, sym_orth
 
 
-def fast_ica(
-    x: Signal,
-    n_ics: int | str = "all",
-    whiten_alg: str = "zca",
-    strategy: str = "symmetric",
-    g_name: str = "logcosh",
-    w_init: torch.Tensor | None = None,
-    conv_th: float = 1e-4,
-    max_iter: int = 200,
-    do_saddle_test: bool = False,
-    device: torch.device | str | None = None,
-    seed: int | None = None,
-    **kwargs,
-) -> tuple[torch.Tensor, FastICA]:
-    """Function implementing FastICA.
-
-    Parameters
-    ----------
-    x : Signal
-        A signal with shape (n_samples, n_channels).
-    n_ics : int or str, default="all"
-        Number of components to estimate:
-        - if set to the string "all", it will be set to the number of channels in the signal;
-        - otherwise, it will be set to the given number.
-    whiten_alg : {"zca", "pca", "none"}, default="zca"
-        Whitening algorithm.
-    strategy : {"symmetric", "deflation"}, default="symmetric"
-        Name of FastICA strategy.
-    g_name : {"logcosh", "gauss", "kurtosis", "skewness", "rati"}, default="logcosh"
-        Name of the contrast function.
-    w_init : Tensor or None, default=None
-        Initial separation matrix with shape (n_components, n_channels).
-    conv_th : float, default=1e-4
-        Threshold for convergence.
-    max_iter : int, default=200
-        Maximum n. of iterations.
-    do_saddle_test : bool, default=False
-        Whether to perform the test of saddle points.
-    device : device or str or None, default=None
-        Torch device.
-    seed : int or None, default=None
-        Seed for the internal PRNG.
-    **kwargs
-        Keyword arguments forwarded to whitening algorithm.
-
-    Returns
-    -------
-    Tensor
-        Estimated source signal with shape (n_samples, n_components).
-    FastICA
-        Fit FastICA model.
-
-    Warns
-    -----
-    ConvergenceWarning
-        The algorithm didn't converge.
-    """
-    ica_model = FastICA(
-        n_ics,
-        whiten_alg,
-        strategy,
-        g_name,
-        w_init,
-        conv_th,
-        max_iter,
-        do_saddle_test,
-        device,
-        seed,
-        **kwargs,
-    )
-    ics = ica_model.decompose_training(x)
-
-    return ics, ica_model
-
-
 class FastICA(ICA):
     """Class implementing FastICA.
 
@@ -211,6 +136,7 @@ class FastICA(ICA):
         self._whiten_model: WhiteningModel | None = whiten_dict[whiten_alg](**whiten_kw)
 
         # Weights
+        self._sep_mtx: torch.Tensor = None  # type: ignore
         if w_init is not None:
             self._sep_mtx = w_init.to(self._device)
             self._n_ics = w_init.size(0)
@@ -276,7 +202,7 @@ class FastICA(ICA):
             n_ch >= self._n_ics
         ), f"Too few channels ({n_ch}) with respect to target components ({self._n_ics})."
 
-        if not hasattr(self, "_sep_mtx"):
+        if self._sep_mtx is None:
             self._sep_mtx = torch.randn(
                 self._n_ics, n_ch, dtype=x_tensor.dtype, device=self._device
             )
@@ -301,8 +227,7 @@ class FastICA(ICA):
         Tensor
             Estimated ICs with shape (n_samples, n_components).
         """
-        is_fit = hasattr(self, "_sep_mtx")
-        assert is_fit, "Fit the model first."
+        assert self._sep_mtx is not None, "Fit the model first."
 
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device)

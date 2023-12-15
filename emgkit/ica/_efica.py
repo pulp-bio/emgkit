@@ -47,7 +47,7 @@ def _gg_score_function(
 
 
 def _exp1(u: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """The 'exp1' nonlinearity."""
+    """The 'exp1' non-linearity."""
 
     eta = 3.3476
     u_tmp = torch.exp(-eta * u.abs())
@@ -55,81 +55,6 @@ def _exp1(u: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     g1_u = (1 - eta * u.abs()) * u_tmp
 
     return g_u, g1_u
-
-
-def efica(
-    x: Signal,
-    n_ics: int | str = "all",
-    whiten_alg: str = "zca",
-    g_name: str = "logcosh",
-    w_init: torch.Tensor | None = None,
-    conv_th: float = 1e-4,
-    conv_th_ft: float = 1e-5,
-    max_iter: int = 200,
-    max_iter_ft: int = 50,
-    device: torch.device | str | None = None,
-    seed: int | None = None,
-    **kwargs,
-) -> tuple[torch.Tensor, EFICA]:
-    """Function implementing EFICA.
-
-    Parameters
-    ----------
-    x : Signal
-        A signal with shape (n_samples, n_channels).
-    n_ics : int or str, default="all"
-        Number of components to estimate:
-        - if set to the string "all", it will be set to the number of channels in the signal;
-        - otherwise, it will be set to the given number.
-    whiten_alg : {"zca", "pca", "none"}, default="zca"
-        Whitening algorithm.
-    g_name : {"logcosh", "gauss", "kurtosis", "rati", "exp1"}, default="logcosh"
-        Name of the contrast function for FastICA.
-    w_init : Tensor or None, default=None
-        Initial separation matrix with shape (n_components, n_channels).
-    conv_th : float, default=1e-4
-        Threshold for convergence for symmetric FastICA.
-    conv_th_ft : float, default=1e-5
-        Threshold for convergence for fine-tuning.
-    max_iter : int, default=200
-        Maximum n. of iterations for symmetric FastICA.
-    max_iter_ft : int, default=50
-        Maximum n. of iterations for fine-tuning.
-    device : device or str or None, default=None
-        Torch device.
-    seed : int or None, default=None
-        Seed for the internal PRNG.
-    **kwargs
-        Keyword arguments forwarded to whitening algorithm.
-
-    Returns
-    -------
-    Tensor
-        Estimated source signal with shape (n_samples, n_components).
-    EFICA
-        Fit EFICA model.
-
-    Warns
-    -----
-    ConvergenceWarning
-        The algorithm didn't converge.
-    """
-    ica_model = EFICA(
-        n_ics,
-        whiten_alg,
-        g_name,
-        w_init,
-        conv_th,
-        conv_th_ft,
-        max_iter,
-        max_iter_ft,
-        device,
-        seed,
-        **kwargs,
-    )
-    ics = ica_model.decompose_training(x)
-
-    return ics, ica_model
 
 
 class EFICA(ICA):
@@ -178,10 +103,6 @@ class EFICA(ICA):
         Maximum n. of iterations for fine-tuning.
     _device : device or None
         Torch device.
-    _mean_vec : Tensor or None
-        Mean vector.
-    _sep_mtx : Tensor or None
-        Separation matrix.
     """
 
     def __init__(
@@ -240,6 +161,7 @@ class EFICA(ICA):
         self._whiten_model: WhiteningModel | None = whiten_dict[whiten_alg](**whiten_kw)
 
         # Weights
+        self._sep_mtx: torch.Tensor = None  # type: ignore
         if w_init is not None:
             self._sep_mtx = w_init.to(self._device)
             self._n_ics = w_init.size(0)
@@ -305,7 +227,7 @@ class EFICA(ICA):
             n_ch >= self._n_ics
         ), f"Too few channels ({n_ch}) with respect to target components ({self._n_ics})."
 
-        if not hasattr(self, "_sep_mtx"):
+        if self._sep_mtx is None:
             self._sep_mtx = torch.randn(
                 self._n_ics, n_ch, dtype=x_tensor.dtype, device=self._device
             )
@@ -389,7 +311,7 @@ class EFICA(ICA):
                 logging.info("Saddle point test ok.")
                 break
 
-        # 2-3. Adaptive choice of nonlinearities + Refinement 1
+        # 2-3. Adaptive choice of non-linearities + Refinement 1
         emp_kurt = ((w @ x_tensor) ** 4).mean(dim=1)
         mu = torch.zeros(
             self._n_ics,
@@ -465,10 +387,9 @@ class EFICA(ICA):
         Returns
         -------
         Tensor
-            Estimated ICs signal with shape (n_samples, n_components).
+            Estimated ICs with shape (n_samples, n_components).
         """
-        is_fit = hasattr(self, "_sep_mtx")
-        assert is_fit, "Fit the model first."
+        assert self._sep_mtx is not None, "Fit the model first."
 
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device)
