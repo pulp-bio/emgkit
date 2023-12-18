@@ -269,7 +269,9 @@ class EMGBSS:
         elif self._f_ext == 0:  # "same_n_mu"
             # Check n_mu: if it's set to "same_ext", disable extension
             self._f_ext = (
-                1 if self._n_mu_target == 0 else int(round(self._n_mu_target / n_ch))
+                1
+                if self._n_mu_target == 0
+                else int(math.ceil(self._n_mu_target / n_ch))
             )
 
         # 1. Extension
