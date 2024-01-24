@@ -484,9 +484,11 @@ def plot_discharges(
     f, axes = plt.subplots(
         nrows=len(spikes_t),
         sharex="all",
+        squeeze=False,
         figsize=fig_size,
         layout="constrained",
     )
+    axes = [ax for nested_ax in axes for ax in nested_ax]  # flatten axes
     f.suptitle("Discharge rate")
     f.supxlabel("Time [s]")
     f.supylabel("Discharge rate [spike/s]")
