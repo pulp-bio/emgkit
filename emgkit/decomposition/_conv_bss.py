@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import math
+import pickle
 import time
 
 import numpy as np
@@ -29,11 +30,11 @@ import torch
 
 from .. import spike_stats, utils
 from .._base import Signal, signal_to_array
-from ..ica import contrast_functions as cf
 from ..preprocessing import PCAWhitening, WhiteningModel, ZCAWhitening, extend_signal
+from . import _contrast_functions as cf
 
 
-class EMGBSS:
+class ConvBSS:
     """Decompose EMG signals via convolutive blind source separation.
 
     Parameters
@@ -237,6 +238,35 @@ class EMGBSS:
     def f_ext(self) -> int:
         """int: Property for getting the extension factor."""
         return self._f_ext
+
+    def save_to_file(self, filename: str) -> None:
+        """Save instance to a .pkl file using pickle.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the .pkl file.
+        """
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load_from_file(cls, filename: str) -> ConvBSS:
+        """Load instance from a .pkl file using pickle.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the .pkl file.
+
+        Returns
+        -------
+        EMGSeparator
+            Instance of EMGSeparator.
+        """
+        with open(filename, "rb") as f:
+            obj = pickle.load(f)
+        return obj
 
     def decompose_training(
         self, emg: Signal

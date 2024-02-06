@@ -16,6 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from ._emg_bss import EMGBSS
+from ._conv_bss import ConvBSS
 
-__all__ = ["EMGBSS"]
+__all__ = ["ConvBSS"]

@@ -16,11 +16,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from . import decomposition, ica, plotting, preprocessing, rls, spike_stats, utils
+from . import decomposition, plotting, preprocessing, rls, spike_stats, utils
 
 __all__ = [
     "decomposition",
-    "ica",
     "plotting",
     "preprocessing",
     "rls",
