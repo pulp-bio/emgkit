@@ -433,9 +433,8 @@ def sparse_to_dense(
         columns=list(spikes_t.keys()),
     )
     for mu, cur_spikes in spikes_t.items():
-        spike_idx = (cur_spikes * fs).astype("int32")
-        spike_idx = spike_idx[spike_idx < n_samp]
-        spikes_bin[mu].iloc[spike_idx] = 1
+        cur_spikes = cur_spikes[cur_spikes < sig_len_s]
+        spikes_bin.loc[cur_spikes, mu] = 1
 
     return spikes_bin
 
