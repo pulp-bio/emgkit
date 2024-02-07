@@ -253,7 +253,11 @@ def plot_signal(
         s_df = pd.DataFrame(s_array, index=np.arange(s_array.shape[0]) / fs)
 
     # Convert labels to Series
-    labels_s = pd.Series(labels) if isinstance(labels, np.ndarray) else labels
+    labels_s = (
+        pd.Series(labels, index=np.arange(labels.size) / fs)
+        if isinstance(labels, np.ndarray)
+        else labels
+    )
 
     # Plot signal
     if as_heatmap:
