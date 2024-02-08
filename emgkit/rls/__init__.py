@@ -16,7 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from ._ng_rls import NatGradRLS, NatGradRLSPreWhite
-from ._pastd import PASTdW
+from ._orica import ORICA
 
-__all__ = ["NatGradRLS", "NatGradRLSPreWhite", "PASTdW"]
+__all__ = ["ORICA"]

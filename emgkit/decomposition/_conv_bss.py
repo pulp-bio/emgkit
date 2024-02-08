@@ -64,7 +64,7 @@ class ConvBSS:
         Minimum discharge rate (in spikes/s) for considering a MU as valid.
     cov_isi_th : float, default=0.5
         Maximum CoV-ISI for considering a MU as valid.
-    device : device or str or None, default=None
+    device : device or str, default="cpu"
         Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
@@ -99,7 +99,7 @@ class ConvBSS:
         Maximum CoV-ISI for considering a MU as valid.
     _dr_th : float
         Minimum discharge rate (in spikes/s) for considering a MU as valid.
-    _device : device or None
+    _device : device
         Torch device.
     _prng : Generator
         Actual PRNG.
@@ -124,7 +124,7 @@ class ConvBSS:
         sil_th: float = 0.85,
         cov_isi_th: float = 0.5,
         dr_th: float = 5.0,
-        device: torch.device | str | None = None,
+        device: torch.device | str = "cpu",
         seed: int | None = None,
         whiten_alg: str = "zca",
         whiten_kw: dict | None = None,

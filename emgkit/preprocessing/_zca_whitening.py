@@ -1,4 +1,4 @@
-"""Function and class implementing the ZCA whitening algorithm.
+"""Class implementing the ZCA whitening algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -31,12 +31,12 @@ class ZCAWhitening(WhiteningModel):
 
     Parameters
     ----------
-    device : device or str or None, default=None
+    device : device or str, default="cpu"
         Torch device.
 
     Attributes
     ----------
-    _device : device or None
+    _device : device
         Torch device.
     _n_samp_seen : int
         Number of samples seen.
@@ -48,7 +48,7 @@ class ZCAWhitening(WhiteningModel):
         Right-singular vectors.
     """
 
-    def __init__(self, device: torch.device | str | None = None) -> None:
+    def __init__(self, device: torch.device | str = "cpu") -> None:
         self._device = torch.device(device) if isinstance(device, str) else device
         self._n_samp_seen = 0
 

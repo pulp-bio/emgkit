@@ -1,4 +1,4 @@
-"""Function and class implementing the PCA whitening algorithm.
+"""Class implementing the PCA whitening algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -40,14 +40,14 @@ class PCAWhitening(WhiteningModel):
         - otherwise, it will be set to the given number.
     keep_dim : bool, default=False
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
-    device : device or str or None, default=None
+    device : device or str, default="cpu"
         Torch device.
 
     Attributes
     ----------
     _keep_dim : bool
         Whether to re-project the low-dimensional whitened data to the original dimensionality.
-    _device : device or None
+    _device : device
         Torch device.
     _n_samp_seen : int
         Number of samples seen.
@@ -63,7 +63,7 @@ class PCAWhitening(WhiteningModel):
         self,
         n_pcs: int | str = "auto",
         keep_dim: bool = False,
-        device: torch.device | str | None = None,
+        device: torch.device | str = "cpu",
     ) -> None:
         assert (isinstance(n_pcs, int) and n_pcs > 0) or (
             isinstance(n_pcs, str) and n_pcs in ("auto", "all")
