@@ -74,12 +74,6 @@ class ConvBSS:
         Whitening arguments.
     bin_alg : {"kmeans", "otsu"}, default="kmeans"
         Binarization algorithm.
-    ref_period_ms : float, default=20.0
-        Refractory period for spike detection (in ms).
-    dup_perc : float, default=0.3
-        Minimum percentage of synchronized discharges for considering two MUs as duplicates.
-    dup_tol_ms : float, default=0.5
-        Tolerance (in ms) for considering two discharges as synchronized.
 
     Attributes
     ----------
@@ -129,9 +123,6 @@ class ConvBSS:
         whiten_alg: str = "zca",
         whiten_kw: dict | None = None,
         bin_alg: str = "kmeans",
-        ref_period_ms: float = 20.0,
-        dup_perc: float = 0.3,
-        dup_tol_ms: float = 0.5,
     ):
         assert (isinstance(n_mu_target, int) and n_mu_target > 0) or (
             isinstance(n_mu_target, str) and n_mu_target == "same_ext"
@@ -205,12 +196,9 @@ class ConvBSS:
             torch.manual_seed(seed)
 
         self._bin_alg = bin_alg
-        self._ref_period = int(round(ref_period_ms / 1000 * fs))
-        self._dup_perc = dup_perc
-        self._dup_tol_ms = dup_tol_ms
+        self._ref_period = int(round(20e-3 * fs))  # 20ms
 
         self._n_mu = 0
-
         self._sep_mtx: torch.Tensor = None  # type: ignore
         self._spike_ths: np.ndarray = None  # type: ignore
 
@@ -226,7 +214,7 @@ class ConvBSS:
 
     @property
     def spike_ths(self) -> np.ndarray:
-        """ndarray: Property for getting the estimated separation matrix."""
+        """ndarray: Property for getting the estimated spike/noise thresholds."""
         return self._spike_ths
 
     @property
@@ -409,7 +397,7 @@ class ConvBSS:
         logging.info("Looking for delayed replicas...")
         ics_bin = utils.sparse_to_dense(spikes_t, n_samp / self._fs, self._fs)
         duplicate_mus = utils.find_replicas(
-            ics_bin, fs=self._fs, tol_ms=self._dup_tol_ms, min_perc=self._dup_perc
+            ics_bin, fs=self._fs, tol_ms=0.5, min_perc=0.3
         )
         idx_to_keep = list(range(len(spikes_t)))
         for main_mu, dup_mus in duplicate_mus.items():
