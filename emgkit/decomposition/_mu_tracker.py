@@ -90,12 +90,12 @@ class MUTracker:
 
     def __init__(
         self,
+        fs: float,
+        f_ext: int,
         mean_vec_init: np.ndarray | torch.Tensor,
         white_mtx_init: np.ndarray | torch.Tensor,
         sep_mtx_init: np.ndarray | torch.Tensor,
         spike_ths_init: np.ndarray,
-        fs: float,
-        f_ext: int,
         learning_rate: float = 0.001,
         momentum: float = 0.9,
         n_gd_steps: int = 1,
