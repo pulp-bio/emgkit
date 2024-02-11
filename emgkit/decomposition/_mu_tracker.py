@@ -47,7 +47,7 @@ class MUTracker:
         Initial array with shape (n_mu,) containing the spike/noise thresholds.
     learning_rate : float, default=0.01
         Learning rate.
-    momentum: float, default=0.9
+    momentum: float, default=0.6
         Momentum.
     n_gd_steps : int, default=1
         Number of steps of gradient descent.
@@ -97,7 +97,7 @@ class MUTracker:
         sep_mtx_init: np.ndarray | torch.Tensor,
         spike_ths_init: np.ndarray,
         learning_rate: float = 0.001,
-        momentum: float = 0.9,
+        momentum: float = 0.6,
         n_gd_steps: int = 1,
         device: torch.device | str = "cpu",
     ) -> None:
@@ -215,6 +215,12 @@ class MUTracker:
             self._sep_vel = self._momentum * self._sep_vel + delta_w
             self._sep_mtx += self._sep_vel
             ics_tensor = self._sep_mtx @ emg_white
+
+            # Solve sign uncertainty
+            for i in range(ics_tensor.size(0)):
+                if (ics_tensor[i] ** 3).mean() < 0:
+                    ics_tensor[i] *= -1
+                    self._sep_mtx[i] *= -1
 
         # Spike detection
         ics_array = ics_tensor.cpu().numpy()
