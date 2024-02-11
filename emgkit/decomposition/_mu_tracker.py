@@ -131,7 +131,7 @@ class MUTracker:
         self._n_gd_steps = n_gd_steps
 
         # Spike detection
-        self._sl = 2 * spike_ths_init.copy()
+        self._sl = 2 * spike_ths_init.copy() ** 2
         self._nl = np.zeros(self._sep_mtx.size(0), dtype=spike_ths_init.dtype)
         self._sl_hist = np.zeros(
             shape=(0, self._sep_mtx.size(0)), dtype=spike_ths_init.dtype
@@ -203,19 +203,24 @@ class MUTracker:
             emg_white = self._white_mtx @ emg_tensor
 
         # On-line BSS
-        ics = self._sep_mtx @ emg_white
+        ics_tensor = self._sep_mtx @ emg_white
         for _ in range(self._n_gd_steps):
             delta_w = self._learning_rate * (
                 self._sep_mtx
-                - 2 * torch.tanh(ics) @ ics.T / (n_samp - 1) @ self._sep_mtx
+                - 2
+                * torch.tanh(ics_tensor)
+                @ ics_tensor.T
+                / (n_samp - 1)
+                @ self._sep_mtx
             )
             self._sep_vel = self._momentum * self._sep_vel + delta_w
             self._sep_mtx += self._sep_vel
-            ics = self._sep_mtx @ emg_white
+            ics_tensor = self._sep_mtx @ emg_white
 
         # Spike detection
+        ics_tensor = ics_tensor**2
         spikes_t = {}
-        ics_array = ics.cpu().numpy()
+        ics_array = ics_tensor.cpu().numpy()
         for i, ic_i in enumerate(ics_array):  # iterate over MUs
             spikes_t[f"MU{i}"] = np.asarray([], dtype=np.float32)
 
