@@ -131,7 +131,7 @@ class MUTracker:
         self._n_gd_steps = n_gd_steps
 
         # Spike detection
-        self._sl = 2 * spike_ths_init.copy() ** 2
+        self._sl = 2 * spike_ths_init.copy()
         self._nl = np.zeros(self._sep_mtx.size(0), dtype=spike_ths_init.dtype)
         self._sl_hist = np.zeros(
             shape=(0, self._sep_mtx.size(0)), dtype=spike_ths_init.dtype
@@ -207,8 +207,7 @@ class MUTracker:
         for _ in range(self._n_gd_steps):
             delta_w = self._learning_rate * (
                 self._sep_mtx
-                - 2
-                * torch.tanh(ics_tensor)
+                - (torch.tanh(ics_tensor) + ics_tensor)
                 @ ics_tensor.T
                 / (n_samp - 1)
                 @ self._sep_mtx
@@ -218,7 +217,7 @@ class MUTracker:
             ics_tensor = self._sep_mtx @ emg_white
 
         # Spike detection
-        ics_array = (ics_tensor**2).cpu().numpy()
+        ics_array = ics_tensor.cpu().numpy()
         spikes_t = {}
         for i, ic_i in enumerate(ics_array):  # iterate over MUs
             spikes_t[f"MU{i}"] = np.asarray([], dtype=np.float32)
@@ -232,10 +231,10 @@ class MUTracker:
 
                 th = self._nl[i] + 0.5 * (self._sl[i] - self._nl[i])
                 if peak_val < th:
-                    self._nl[i] = 0.4 * peak_val + 0.6 * self._nl[i]
+                    self._nl[i] = 0.2 * peak_val + 0.8 * self._nl[i]
                     continue
 
-                self._sl[i] = 0.4 * peak_val + 0.6 * self._sl[i]
+                self._sl[i] = 0.2 * peak_val + 0.8 * self._sl[i]
 
                 # Save peak as spike
                 spikes_t[f"MU{i}"] = np.append(
