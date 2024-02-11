@@ -131,7 +131,7 @@ class MUTracker:
         self._n_gd_steps = n_gd_steps
 
         # Spike detection
-        self._sl = 2 * spike_ths_init.copy()
+        self._sl = 4 * spike_ths_init.copy()
         self._nl = np.zeros(self._sep_mtx.size(0), dtype=spike_ths_init.dtype)
         self._sl_hist = np.zeros(
             shape=(0, self._sep_mtx.size(0)), dtype=spike_ths_init.dtype
@@ -154,7 +154,7 @@ class MUTracker:
     @property
     def th_hist(self) -> np.ndarray:
         """ndarray: Property representing the history of the threshold."""
-        return self._nl_hist + 0.5 * (self._sl_hist - self._nl_hist)
+        return self._nl_hist + 0.25 * (self._sl_hist - self._nl_hist)
 
     def process_window(self, emg: Signal) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
         """Process a window and adapt internal parameters.
@@ -235,12 +235,12 @@ class MUTracker:
             for peak_idx in peaks:
                 peak_val = ic_i[peak_idx]
 
-                th = self._nl[i] + 0.5 * (self._sl[i] - self._nl[i])
+                th = self._nl[i] + 0.25 * (self._sl[i] - self._nl[i])
                 if peak_val < th:
-                    self._nl[i] = 0.2 * peak_val + 0.8 * self._nl[i]
+                    self._nl[i] = 0.125 * peak_val + 0.875 * self._nl[i]
                     continue
 
-                self._sl[i] = 0.2 * peak_val + 0.8 * self._sl[i]
+                self._sl[i] = 0.125 * peak_val + 0.875 * self._sl[i]
 
                 # Save peak as spike
                 spikes_t[f"MU{i}"] = np.append(
