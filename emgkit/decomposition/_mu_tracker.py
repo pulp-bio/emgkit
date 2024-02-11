@@ -218,9 +218,8 @@ class MUTracker:
             ics_tensor = self._sep_mtx @ emg_white
 
         # Spike detection
-        ics_tensor = ics_tensor**2
+        ics_array = (ics_tensor**2).cpu().numpy()
         spikes_t = {}
-        ics_array = ics_tensor.cpu().numpy()
         for i, ic_i in enumerate(ics_array):  # iterate over MUs
             spikes_t[f"MU{i}"] = np.asarray([], dtype=np.float32)
 
@@ -233,10 +232,10 @@ class MUTracker:
 
                 th = self._nl[i] + 0.5 * (self._sl[i] - self._nl[i])
                 if peak_val < th:
-                    self._nl[i] = 0.2 * peak_val + 0.8 * self._nl[i]
+                    self._nl[i] = 0.4 * peak_val + 0.6 * self._nl[i]
                     continue
 
-                self._sl[i] = 0.2 * peak_val + 0.8 * self._sl[i]
+                self._sl[i] = 0.4 * peak_val + 0.6 * self._sl[i]
 
                 # Save peak as spike
                 spikes_t[f"MU{i}"] = np.append(
