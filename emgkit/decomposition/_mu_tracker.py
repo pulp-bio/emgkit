@@ -205,12 +205,9 @@ class MUTracker:
         # On-line BSS
         ics_tensor = self._sep_mtx @ emg_white
         for _ in range(self._n_gd_steps):
+            g = -2 * torch.tanh(ics_tensor)
             delta_w = self._learning_rate * (
-                self._sep_mtx
-                - (torch.tanh(ics_tensor) + ics_tensor)
-                @ ics_tensor.T
-                / (n_samp - 1)
-                @ self._sep_mtx
+                self._sep_mtx + g @ ics_tensor.T / (n_samp - 1) @ self._sep_mtx
             )
             self._sep_vel = self._momentum * self._sep_vel + delta_w
             self._sep_mtx += self._sep_vel
