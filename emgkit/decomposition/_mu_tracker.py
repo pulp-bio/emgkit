@@ -216,11 +216,11 @@ class MUTracker:
             self._sep_mtx += self._sep_vel
             ics_tensor = self._sep_mtx @ emg_white
 
-            # Solve sign uncertainty
-            for i in range(ics_tensor.size(0)):
-                if (ics_tensor[i] ** 3).mean() < 0:
-                    ics_tensor[i] *= -1
-                    self._sep_mtx[i] *= -1
+        # Solve sign uncertainty
+        for i in range(ics_tensor.size(0)):
+            if (ics_tensor[i] ** 3).mean() < 0:
+                ics_tensor[i] *= -1
+                self._sep_mtx[i] *= -1
 
         # Spike detection
         ics_array = ics_tensor.cpu().numpy()
