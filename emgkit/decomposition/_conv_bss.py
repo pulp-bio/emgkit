@@ -306,6 +306,8 @@ class ConvBSS:
             self._n_mu_target = n_ch_w
 
         # 3. ICA
+        # 3.1. Allocate memory for separation matrix, spike/noise thresholds and ICs,
+        # and initialize spikes and SIL scores
         sep_mtx = torch.zeros(
             self._n_mu_target,
             n_ch_w,
@@ -319,24 +321,40 @@ class ConvBSS:
             dtype=emg_white.dtype,
             device=self._device,
         )
-        spikes_t = []
-        sil_scores = []
+        spikes_t_tmp = []
+        sil_scores_tmp = []
+        if self._n_mu > 0:
+            # If already trained, keep previous MU parameters
+            sep_mtx[: self._n_mu] = self._sep_mtx
+            spike_ths[: self._n_mu] = self._spike_ths
+            ics[: self._n_mu] = self._sep_mtx @ emg_white
+
+            for i in range(self._n_mu):
+                spikes_i = utils.detect_spikes(
+                    ics[i],
+                    ref_period=self._ref_period,
+                    bin_alg=self._bin_alg,
+                    threshold=self._spike_ths[i].item(),
+                    seed=self._prng,
+                )[0]
+                spikes_t_tmp.append(spikes_i / self._fs)
+                sil_scores_tmp.append(np.inf)
+
+        # 3.2. Run ICA loop
         w_init = self._initialize_weights(emg_white)
-        for i in range(self._n_mu_target):
+        for i in range(self._n_mu, self._n_mu_target):
             logging.info(f"----- IC {i + 1} -----")
 
-            if i < self._n_mu:  # ICs from previous training
-                w_init_i = self._sep_mtx[i]  # initialize with old separation vector
-            else:  # ICs from current training
-                w_init_i = w_init[i - self._n_mu]
-
-            w_i = self._fast_ica_iter(emg_white, sep_mtx, w_i_init=w_init_i)
-            # Solve sign uncertainty
+            # FastICA step
+            w_i = self._fast_ica_iter(
+                emg_white, sep_mtx, w_i_init=w_init[i - self._n_mu]
+            )
+            # Solve sign uncertainty using skewness
             ic_i = w_i @ emg_white
             if (ic_i**3).mean() < 0:
                 w_i *= -1
 
-            # CoV-ISI improvement
+            # CoV-ISI improvement step
             w_i, spikes_i, spike_th_i, sil = self._cov_isi_improvement(
                 emg_white, w_i=w_i
             )
@@ -346,16 +364,15 @@ class ConvBSS:
             spike_ths[i] = spike_th_i
             # Save current IC, discharge times and SIL
             ics[i] = w_i @ emg_white
-            spikes_t.append(spikes_i / self._fs)
-            sil_scores.append(sil)
+            spikes_t_tmp.append(spikes_i / self._fs)
+            sil_scores_tmp.append(sil)
 
         # 4. Post-processing
         # 4.1. SIL, CoV-ISI and DR thresholding
-        idx_to_keep = []
-        cov_isi_scores = []
-        for i in range(self._n_mu_target):
+        idx_to_keep = list(range(self._n_mu))
+        for i in range(self._n_mu, self._n_mu_target):
             # Check SIL
-            sil = sil_scores[i]
+            sil = sil_scores_tmp[i]
             if np.isnan(sil) or sil <= self._sil_th:
                 logging.info(
                     f"{i}-th IC: SIL below threshold (SIL = {sil:.3f} <= {self._sil_th:.3f}) -> skipped."
@@ -363,7 +380,7 @@ class ConvBSS:
                 continue
 
             # Check CoV-ISI
-            cov_isi = spike_stats.cov_isi(spikes_t[i])
+            cov_isi = spike_stats.cov_isi(spikes_t_tmp[i])
             if np.isnan(cov_isi) or cov_isi >= self._cov_isi_th:
                 logging.info(
                     f"{i}-th IC: CoV-ISI above threshold (CoV-ISI = {cov_isi:.2%} >= {self._cov_isi_th:.2%})"
@@ -372,7 +389,7 @@ class ConvBSS:
                 continue
 
             # Check discharge rate
-            avg_dr = spike_stats.instantaneous_discharge_rate(spikes_t[i]).mean()
+            avg_dr = spike_stats.instantaneous_discharge_rate(spikes_t_tmp[i]).mean()
             if avg_dr <= self._dr_th:
                 logging.info(
                     f"{i}-th IC: discharge rate below threshold (DR = {avg_dr:.3f} <= {self._dr_th:.3f})"
@@ -383,15 +400,19 @@ class ConvBSS:
             logging.info(
                 f"{i}-th IC: SIL = {sil:.3f}, CoV-ISI = {cov_isi:.2%} -> accepted."
             )
-            cov_isi_scores.append(cov_isi)
             idx_to_keep.append(i)
+        # Keep only valid entries
         sep_mtx = sep_mtx[idx_to_keep]
         spike_ths = spike_ths[idx_to_keep]
         ics = ics[idx_to_keep]
-        spikes_t = {f"MU{i}": spikes_t[idx] for i, idx in enumerate(idx_to_keep)}
-        cov_isi_scores = {i: cov_isi for i, cov_isi in enumerate(cov_isi_scores)}
+        # Turn lists into dictionaries
+        spikes_t = {}
+        sil_scores = {}
+        for i, idx in enumerate(idx_to_keep):
+            spikes_t[f"MU{i}"] = spikes_t_tmp[idx]
+            sil_scores[i] = sil_scores_tmp[idx]
 
-        logging.info(f"Extracted {len(spikes_t)} MUs after post-processing.")
+        logging.info(f"Extracted {len(spikes_t)} MUs before replicas removal.")
 
         # 4.2. Replicas removal
         logging.info("Looking for delayed replicas...")
@@ -406,12 +427,10 @@ class ConvBSS:
             dup_str = ", ".join([f"{mu}" for mu in dup_mus])
             logging.info(f"Found group of duplicate MUs: {dup_str}.")
 
-            # Keep only the MU with the lowest CoV-ISI
-            cov_isi_dup = {k: v for k, v in cov_isi_scores.items() if k in dup_mus}
-            mu_keep = min(cov_isi_dup, key=lambda k: cov_isi_dup[k])
-            logging.info(
-                f"Keeping MU {mu_keep} (CoV-ISI = {cov_isi_dup[mu_keep]:.2%})."
-            )
+            # Keep only the MU with the highest SIL
+            sil_dup = {k: v for k, v in sil_scores.items() if k in dup_mus}
+            mu_keep = max(sil_dup, key=lambda k: sil_dup[k])
+            logging.info(f"Keeping MU {mu_keep} (SIL = {sil_dup[mu_keep]:.2%}).")
 
             # Mark duplicates
             dup_mus.remove(mu_keep)
