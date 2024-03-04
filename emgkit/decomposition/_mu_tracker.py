@@ -29,7 +29,7 @@ from ..preprocessing import extend_signal
 
 class MUTracker:
     """Class implementing the MU tracking algorithm based on
-    the Bell-Sejnowski algorithm with natural gradient.
+    the Amari et al.'s algorithm with natural gradient and on Pan-Tompkins.
 
     Parameters
     ----------
@@ -47,12 +47,16 @@ class MUTracker:
         Initial array with shape (n_mu,) containing the spike/noise thresholds.
     learning_rate : float, default=0.01
         Learning rate.
-    momentum: float, default=0.6
-        Momentum.
-    n_gd_steps : int, default=1
-        Number of steps of gradient descent.
+    use_adam: bool, default=False
+        Whether to use .
     device : device or str, default="cpu"
         Torch device.
+    momentum : float, default = 0.6
+        Momentum.
+    beta1 : float = 0.9
+        Decay rate of the first-moment estimates (relevant only if the optimizer is "adam").
+    beta2 : float = 0.999
+        Decay rate of the second-moment estimates (relevant only if the optimizer is "adam").
 
     Attributes
     ----------
@@ -76,8 +80,6 @@ class MUTracker:
         Velocity term for whitening optimization.
     _sep_vel : float
         Velocity term for separation optimization.
-    _n_gd_steps : int
-        Number of steps of gradient descent.
     _sl : list of float
         Running estimate of spike level for each MU in the BSS output before integration.
     _nl : list of float
@@ -97,9 +99,11 @@ class MUTracker:
         sep_mtx_init: np.ndarray | torch.Tensor,
         spike_ths_init: np.ndarray,
         learning_rate: float = 0.001,
-        momentum: float = 0.6,
-        n_gd_steps: int = 1,
+        use_adam: bool = False,
         device: torch.device | str = "cpu",
+        momentum: float = 0.6,
+        beta1: float = 0.9,
+        beta2: float = 0.999,
     ) -> None:
         self._fs = fs
 
@@ -125,10 +129,12 @@ class MUTracker:
             else mean_vec_init.clone().to(self._device)
         )
         self._learning_rate = learning_rate
+        self._use_adam = use_adam
         self._momentum = momentum
+        self._beta1 = beta1
+        self._beta2 = beta2
         self._white_vel = 0
         self._sep_vel = 0
-        self._n_gd_steps = n_gd_steps
 
         # Spike detection
         self._sl = 2 * spike_ths_init.copy()
@@ -193,25 +199,39 @@ class MUTracker:
 
         # On-line whitening
         emg_white = self._white_mtx @ emg_tensor
-        for _ in range(self._n_gd_steps):
-            delta_w = self._learning_rate * (
+        if self._use_adam:
+            pass
+        else:
+            grad_w = (
                 self._white_mtx
                 - emg_white @ emg_white.T / (n_samp - 1) @ self._white_mtx
             )
-            self._white_vel = self._momentum * self._white_vel + delta_w
-            self._white_mtx += self._white_vel
-            emg_white = self._white_mtx @ emg_tensor
+
+            if self._momentum != 0:
+                self._white_vel = (
+                    self._momentum * self._white_vel + self._learning_rate * grad_w
+                )
+                self._white_mtx += self._white_vel
+            else:
+                self._white_mtx += self._learning_rate * grad_w
+        emg_white = self._white_mtx @ emg_tensor
 
         # On-line BSS
         ics_tensor = self._sep_mtx @ emg_white
-        for _ in range(self._n_gd_steps):
-            g = -2 * torch.tanh(ics_tensor)
-            delta_w = self._learning_rate * (
-                self._sep_mtx + g @ ics_tensor.T / (n_samp - 1) @ self._sep_mtx
-            )
-            self._sep_vel = self._momentum * self._sep_vel + delta_w
-            self._sep_mtx += self._sep_vel
-            ics_tensor = self._sep_mtx @ emg_white
+        g = -2 * torch.tanh(ics_tensor)
+        if self._use_adam:
+            pass
+        else:
+            grad_w = self._sep_mtx + g @ ics_tensor.T / (n_samp - 1) @ self._sep_mtx
+
+            if self._momentum != 0:
+                self._sep_vel = (
+                    self._momentum * self._sep_vel + self._learning_rate * grad_w
+                )
+                self._sep_mtx += self._sep_vel
+            else:
+                self._sep_mtx += self._learning_rate * grad_w
+        ics_tensor = self._sep_mtx @ emg_white
 
         # Solve sign uncertainty
         for i in range(ics_tensor.size(0)):
