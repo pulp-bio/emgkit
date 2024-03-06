@@ -48,7 +48,7 @@ class MUTracker:
     learning_rate : float, default=0.01
         Learning rate.
     use_adam: bool, default=False
-        Whether to use .
+        Whether to use Adam.
     device : device or str, default="cpu"
         Torch device.
     momentum : float, default = 0.6
@@ -72,20 +72,32 @@ class MUTracker:
         Whitening matrix with shape (n_pcs, n_channels).
     _sep_mtx : Tensor
         Separation matrix with shape (n_mu, n_pcs).
-    _learning_rate : float
+    _lr : float
         Learning rate.
+    _use_adam: bool
+        Whether to use Adam.
     _momentum : float
         Momentum.
-    _white_vel : float
-        Velocity term for whitening optimization.
-    _sep_vel : float
-        Velocity term for separation optimization.
+    _beta1 : float
+        Decay rate of the first-moment estimates (relevant only if the optimizer is "adam").
+    _beta2 : float
+        Decay rate of the second-moment estimates (relevant only if the optimizer is "adam").
+    _white_m : float
+        1st moment vector for whitening optimization.
+    _white_v : float
+        2nd moment vector for whitening optimization.
+    _sep_m : float
+        1st moment vector for separation optimization.
+    _sep_v : float
+        2nd moment vector for separation optimization.
     _sl : list of float
         Running estimate of spike level for each MU in the BSS output before integration.
     _nl : list of float
         Running estimate of noise level for each MU in the BSS output before integration.
     _n_samp_seen : int
         Number of samples seen.
+    _t : int
+        Number of iterations.
     _device : device
         Torch device.
     """
@@ -128,13 +140,15 @@ class MUTracker:
             if isinstance(mean_vec_init, np.ndarray)
             else mean_vec_init.clone().to(self._device)
         )
-        self._learning_rate = learning_rate
+        self._lr = learning_rate
         self._use_adam = use_adam
         self._momentum = momentum
         self._beta1 = beta1
         self._beta2 = beta2
-        self._white_vel = 0
-        self._sep_vel = 0
+        self._white_m = 0
+        self._white_v = 0
+        self._sep_m = 0
+        self._sep_v = 0
 
         # Spike detection
         self._sl = 2 * spike_ths_init.copy()
@@ -146,6 +160,7 @@ class MUTracker:
             shape=(0, self._sep_mtx.size(0)), dtype=spike_ths_init.dtype
         )
         self._n_samp_seen = 0
+        self._t = 1
 
     @property
     def sl_hist(self) -> np.ndarray:
@@ -199,38 +214,37 @@ class MUTracker:
 
         # On-line whitening
         emg_white = self._white_mtx @ emg_tensor
-        if self._use_adam:
-            pass
-        else:
-            grad_w = (
-                self._white_mtx
-                - emg_white @ emg_white.T / (n_samp - 1) @ self._white_mtx
-            )
-
-            if self._momentum != 0:
-                self._white_vel = (
-                    self._momentum * self._white_vel + self._learning_rate * grad_w
-                )
-                self._white_mtx += self._white_vel
-            else:
-                self._white_mtx += self._learning_rate * grad_w
+        grad_w = (
+            self._white_mtx - emg_white @ emg_white.T / (n_samp - 1) @ self._white_mtx
+        )
+        if self._use_adam:  # Adam
+            self._white_m = self._beta1 * self._white_m + (1 - self._beta1) * grad_w
+            self._white_v = self._beta2 * self._white_v + (1 - self._beta2) * grad_w**2
+            m_debias = self._white_m / (1 - self._beta1**self._t)
+            v_debias = self._white_v / (1 - self._beta2**self._t)
+            self._white_mtx += self._lr * m_debias / (v_debias.sqrt() + 1e-8)
+        elif self._momentum != 0:  # momentum
+            self._white_m = self._momentum * self._white_m + self._lr * grad_w
+            self._white_mtx += self._white_m
+        else:  # standard gradient update
+            self._white_mtx += self._lr * grad_w
         emg_white = self._white_mtx @ emg_tensor
 
         # On-line BSS
         ics_tensor = self._sep_mtx @ emg_white
         g = -2 * torch.tanh(ics_tensor)
-        if self._use_adam:
-            pass
-        else:
-            grad_w = self._sep_mtx + g @ ics_tensor.T / (n_samp - 1) @ self._sep_mtx
-
-            if self._momentum != 0:
-                self._sep_vel = (
-                    self._momentum * self._sep_vel + self._learning_rate * grad_w
-                )
-                self._sep_mtx += self._sep_vel
-            else:
-                self._sep_mtx += self._learning_rate * grad_w
+        grad_w = self._sep_mtx + g @ ics_tensor.T / (n_samp - 1) @ self._sep_mtx
+        if self._use_adam:  # Adam
+            self._sep_m = self._beta1 * self._sep_m + (1 - self._beta1) * grad_w
+            self._sep_v = self._beta2 * self._sep_v + (1 - self._beta2) * grad_w**2
+            m_debias = self._sep_m / (1 - self._beta1**self._t)
+            v_debias = self._sep_v / (1 - self._beta2**self._t)
+            self._sep_mtx += self._lr * m_debias / (v_debias.sqrt() + 1e-8)
+        elif self._momentum != 0:  # momentum
+            self._sep_m = self._momentum * self._sep_m + self._lr * grad_w
+            self._sep_mtx += self._sep_m
+        else:  # standard gradient update
+            self._sep_mtx += self._lr * grad_w
         ics_tensor = self._sep_mtx @ emg_white
 
         # Solve sign uncertainty
@@ -245,7 +259,7 @@ class MUTracker:
         for i, ic_i in enumerate(ics_array):  # iterate over MUs
             spikes_t[f"MU{i}"] = np.asarray([], dtype=np.float32)
 
-            # Detect peaks, and compare each one agains signal and noise estimates
+            # Detect peaks, and compare each one against signal and noise estimates
             peaks, _ = signal.find_peaks(
                 ic_i, height=0, distance=int(round(20e-3 * self._fs))
             )
@@ -283,5 +297,6 @@ class MUTracker:
         )
 
         self._n_samp_seen += n_samp
+        self._t += 1
 
         return ics, spikes_t
