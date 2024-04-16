@@ -45,12 +45,11 @@ class ConvBSS:
         Number of target MUs to extract:
         - if set to the string "same_ext", it will be set to the number of extended observations;
         - otherwise, it will be set to the given number.
-    f_ext_ms : float or str, default="same_n_mu"
-        Extension factor for the signal (in ms):
+    f_ext : int or str, default="same_n_mu"
+        Extension factor for the signal:
         - if set to the string "same_n_mu", it will be set to n. of target MUs / n. of channels
         (if n_mu is "same_ext", extension will be disabled);
         - if set to the string "auto", it will be set to 1000 / n. of channels;
-        - if set to the string "none", the signal won't be extended;
         - otherwise, it will be set to the given value.
     g_name : {"logcosh", "skewness", "gauss", "kurtosis", "rati"}, default="logcosh"
         Name of the contrast function.
@@ -111,7 +110,7 @@ class ConvBSS:
         self,
         fs: float,
         n_mu_target: int | str = "same_ext",
-        f_ext_ms: float | str = "same_n_mu",
+        f_ext: float | str = "same_n_mu",
         g_name: str = "logcosh",
         conv_th: float = 1e-4,
         max_iter: int = 100,
@@ -127,9 +126,9 @@ class ConvBSS:
         assert (isinstance(n_mu_target, int) and n_mu_target > 0) or (
             isinstance(n_mu_target, str) and n_mu_target == "same_ext"
         ), 'n_mu must be either a positive integer or "same_ext".'
-        assert (isinstance(f_ext_ms, float) and f_ext_ms > 0) or (
-            isinstance(f_ext_ms, str) and f_ext_ms in ("same_n_mu", "auto", "none")
-        ), 'f_ext_ms must be either a positive float, "same_n_mu", "auto" or "none".'
+        assert (isinstance(f_ext, int) and f_ext > 0) or (
+            isinstance(f_ext, str) and f_ext in ("same_n_mu", "auto")
+        ), 'f_ext must be either a positive integer, "same_n_mu", "auto".'
         assert g_name in (
             "logcosh",
             "skewness",
@@ -168,14 +167,12 @@ class ConvBSS:
         self._n_mu_target = 0 if n_mu_target == "same_ext" else n_mu_target
 
         # Map "same_n_mu" -> 0, "auto" -> -1 and "none" -> 1
-        if f_ext_ms == "same_n_mu":
+        if f_ext == "same_n_mu":
             self._f_ext = 0
-        elif f_ext_ms == "auto":
+        elif f_ext == "auto":
             self._f_ext = -1
-        elif f_ext_ms == "none":
-            self._f_ext = 1
         else:
-            self._f_ext = int(round(f_ext_ms / 1000 * fs))
+            self._f_ext = f_ext
 
         g_dict = {
             "logcosh": cf.logcosh,
