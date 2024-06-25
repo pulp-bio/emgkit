@@ -1,4 +1,5 @@
-"""Class implementing the convolutive blind source separation algorithm
+"""
+Class implementing the convolutive blind source separation algorithm
 for EMG decomposition (https://doi.org/10.1088/1741-2560/13/2/026027).
 
 
@@ -35,7 +36,8 @@ from . import _contrast_functions as cf
 
 
 class ConvBSS:
-    """Decompose EMG signals via convolutive blind source separation.
+    """
+    Decompose EMG signals via convolutive blind source separation.
 
     Parameters
     ----------
@@ -225,7 +227,8 @@ class ConvBSS:
         return self._f_ext
 
     def save_to_file(self, filename: str) -> None:
-        """Save instance to a .pkl file using pickle.
+        """
+        Save instance to a .pkl file using pickle.
 
         Parameters
         ----------
@@ -237,7 +240,8 @@ class ConvBSS:
 
     @classmethod
     def load_from_file(cls, filename: str) -> ConvBSS:
-        """Load instance from a .pkl file using pickle.
+        """
+        Load instance from a .pkl file using pickle.
 
         Parameters
         ----------
@@ -256,7 +260,8 @@ class ConvBSS:
     def decompose_training(
         self, emg: Signal
     ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Train the decomposition model to decompose the given EMG signal into MUAPTs. If called multiple times,
+        """
+        Train the decomposition model to decompose the given EMG signal into MUAPTs. If called multiple times,
         the model updates its internal parameters without forgetting the previous history.
 
         Parameters
@@ -268,7 +273,7 @@ class ConvBSS:
         -------
         DataFrame
             A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
-        dict of {str : ndarray}
+        dict of str: ndarray
             Dictionary containing the discharge times for each MU.
         """
         start = time.time()
@@ -456,7 +461,8 @@ class ConvBSS:
     def decompose_inference(
         self, emg: Signal
     ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Decompose the given EMG signal into MUAPTs using the frozen decomposition model.
+        """
+        Decompose the given EMG signal into MUAPTs using the frozen decomposition model.
 
         Parameters
         ----------
@@ -467,7 +473,7 @@ class ConvBSS:
         -------
         DataFrame
             A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
-        dict of {str : ndarray}
+        dict of str: ndarray
             Dictionary containing the discharge times for each MU.
         """
         is_fit = self._sep_mtx is not None and self._spike_ths is not None

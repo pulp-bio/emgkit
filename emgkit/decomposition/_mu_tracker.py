@@ -1,4 +1,5 @@
-"""Class implementing the MU tracking algorithm.
+"""
+Class implementing the MU tracking algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -28,7 +29,8 @@ from ..preprocessing import extend_signal
 
 
 class MUTracker:
-    """Class implementing the MU tracking algorithm based on
+    """
+    Class implementing the MU tracking algorithm based on
     the Amari et al.'s algorithm with natural gradient and on Pan-Tompkins.
 
     Parameters
@@ -178,7 +180,8 @@ class MUTracker:
         return self._nl_hist + 0.5 * (self._sl_hist - self._nl_hist)
 
     def process_window(self, emg: Signal) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-        """Process a window and adapt internal parameters.
+        """
+        Process a window and adapt internal parameters.
 
         Parameters
         ----------
@@ -189,7 +192,7 @@ class MUTracker:
         -------
         DataFrame
             A DataFrame with shape (n_samples, n_mu) containing the components estimated by ICA.
-        dict of {str : ndarray}
+        dict of str: ndarray
             Dictionary containing the discharge times for each MU.
         """
         # Convert to array

@@ -1,4 +1,5 @@
-"""This package contains the implementation of EMG decomposition algorithms.
+"""
+This package contains the implementation of EMG decomposition algorithms.
 
 
 Copyright 2023 Mattia Orlandi
