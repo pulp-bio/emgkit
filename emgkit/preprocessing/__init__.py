@@ -1,4 +1,5 @@
-"""This package contains the implementations of the pre-processing steps
+"""
+This package contains the implementations of the pre-processing steps
 commonly used in EMG decomposition, such as filtering and whitening.
 
 

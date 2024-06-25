@@ -1,4 +1,5 @@
-"""Class implementing the ZCA whitening algorithm.
+"""
+Class implementing the ZCA whitening algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -27,7 +28,8 @@ from ._abc_whitening import WhiteningModel
 
 
 class ZCAWhitening(WhiteningModel):
-    """Class implementing ZCA whitening.
+    """
+    Class implementing ZCA whitening.
 
     Parameters
     ----------
@@ -76,7 +78,8 @@ class ZCAWhitening(WhiteningModel):
         return self._cov_mtx
 
     def whiten_training(self, x: Signal) -> torch.Tensor:
-        """Train the whitening model to whiten the given signal. If called multiple times,
+        """
+        Train the whitening model to whiten the given signal. If called multiple times,
         the model updates its internal parameters without forgetting the previous history.
 
         Parameters
@@ -159,7 +162,8 @@ class ZCAWhitening(WhiteningModel):
         return x_w.T
 
     def whiten_inference(self, x: Signal) -> torch.Tensor:
-        """Whiten the given signal using the frozen whitening model.
+        """
+        Whiten the given signal using the frozen whitening model.
 
         Parameters
         ----------

@@ -1,4 +1,5 @@
-"""Interface for whitening algorithms.
+"""
+Interface for whitening algorithms.
 
 
 Copyright 2023 Mattia Orlandi
@@ -45,7 +46,8 @@ class WhiteningModel(ABC):
 
     @abstractmethod
     def whiten_training(self, x: Signal) -> torch.Tensor:
-        """Train the whitening model to whiten the given signal. If called multiple times,
+        """
+        Train the whitening model to whiten the given signal. If called multiple times,
         the model updates its internal parameters without forgetting the previous history.
 
         Parameters
@@ -68,7 +70,8 @@ class WhiteningModel(ABC):
 
     @abstractmethod
     def whiten_inference(self, x: Signal) -> torch.Tensor:
-        """Whiten the given signal using the frozen whitening model.
+        """
+        Whiten the given signal using the frozen whitening model.
 
         Parameters
         ----------

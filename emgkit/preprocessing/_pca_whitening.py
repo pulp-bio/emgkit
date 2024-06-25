@@ -1,4 +1,5 @@
-"""Class implementing the PCA whitening algorithm.
+"""
+Class implementing the PCA whitening algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -28,7 +29,8 @@ from ._abc_whitening import WhiteningModel
 
 
 class PCAWhitening(WhiteningModel):
-    """Class implementing PCA whitening.
+    """
+    Class implementing PCA whitening.
 
     Parameters
     ----------
@@ -110,7 +112,8 @@ class PCAWhitening(WhiteningModel):
         return self._n_pcs
 
     def whiten_training(self, x: Signal) -> torch.Tensor:
-        """Train the whitening model to whiten the given signal. If called multiple times,
+        """
+        Train the whitening model to whiten the given signal. If called multiple times,
         the model updates its internal parameters without forgetting the previous history.
 
         Parameters
@@ -212,7 +215,8 @@ class PCAWhitening(WhiteningModel):
         return x_w.T
 
     def whiten_inference(self, x: Signal) -> torch.Tensor:
-        """Whiten the given signal using the frozen whitening model.
+        """
+        Whiten the given signal using the frozen whitening model.
 
         Parameters
         ----------

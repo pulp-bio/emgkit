@@ -1,4 +1,5 @@
-"""Function performing the extension step of an EMG signal.
+"""
+Function performing the extension step of an EMG signal.
 
 
 Copyright 2023 Mattia Orlandi
@@ -24,7 +25,8 @@ from .._base import Signal, signal_to_array
 
 
 def extend_signal(x: Signal, f_ext: int = 1) -> np.ndarray:
-    """Extend signal with delayed replicas by a given extension factor.
+    """
+    Extend signal with delayed replicas by a given extension factor.
 
     Parameters
     ----------

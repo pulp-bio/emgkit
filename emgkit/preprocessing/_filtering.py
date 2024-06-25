@@ -1,4 +1,5 @@
-"""Functions implementing filters.
+"""
+Functions implementing filters.
 
 
 Copyright 2023 Mattia Orlandi
@@ -25,7 +26,8 @@ from .._base import Signal, signal_to_array
 
 
 def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarray:
-    """Apply a Butterworth lowpass filter on the given signal.
+    """
+    Apply a Butterworth lowpass filter on the given signal.
 
     Parameters
     ----------
@@ -51,7 +53,8 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarr
 
 
 def highpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarray:
-    """Apply a Butterworth highpass filter on the given signal.
+    """
+    Apply a Butterworth highpass filter on the given signal.
 
     Parameters
     ----------
@@ -83,7 +86,8 @@ def bandpass_filter(
     fs: float,
     order: int = 2,
 ) -> np.ndarray:
-    """Apply a Butterworth bandpass filter on the given signal.
+    """
+    Apply a Butterworth bandpass filter on the given signal.
 
     Parameters
     ----------
@@ -119,7 +123,8 @@ def bandstop_filter(
     fs: float,
     order: int = 2,
 ) -> np.ndarray:
-    """Apply a Butterworth bandstop filter on the given signal.
+    """
+    Apply a Butterworth bandstop filter on the given signal.
 
     Parameters
     ----------
