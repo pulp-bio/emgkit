@@ -61,20 +61,24 @@ class ConvBSS:
         Maximum n. of iterations.
     sil_th : float, default=0.85
         Minimum silhouette threshold for considering a MU as valid.
-    dr_th : float, default=5.0
-        Minimum discharge rate (in spikes/s) for considering a MU as valid.
-    cov_isi_th : float, default=0.5
+    cov_isi_th : float, default=0.4
         Maximum CoV-ISI for considering a MU as valid.
+    cov_amp_th : float, default=0.3
+        Maximum CoV-Amp for considering a MU as valid.
+    min_dr : float, default=5.0
+        Minimum discharge rate (in spikes/s) for considering a MU as valid.
+    max_dr : float, default=50.0
+        Maximum discharge rate (in spikes/s) for considering a MU as valid.
     device : device or str, default="cpu"
         Torch device.
     seed : int or None, default=None
         Seed for the internal PRNG.
     whiten_alg : {"zca", "pca"}, default="zca"
         Whitening algorithm.
-    whiten_kw : dict or None, default=None
-        Whitening arguments.
     bin_alg : {"kmeans", "otsu"}, default="kmeans"
         Binarization algorithm.
+    kwargs : dict
+        Keyword arguments (for the PCA whitening procedure).
 
     Attributes
     ----------
@@ -92,8 +96,12 @@ class ConvBSS:
         Minimum silhouette threshold for considering a MU as valid.
     _cov_isi_th : float
         Maximum CoV-ISI for considering a MU as valid.
-    _dr_th : float
+    cov_amp_th : float
+        Maximum CoV-Amp for considering a MU as valid.
+    _min_dr : float
         Minimum discharge rate (in spikes/s) for considering a MU as valid.
+    _max_dr : float
+        Maximum discharge rate (in spikes/s) for considering a MU as valid.
     _device : device
         Torch device.
     _prng : Generator
@@ -117,13 +125,15 @@ class ConvBSS:
         conv_th: float = 1e-4,
         max_iter: int = 100,
         sil_th: float = 0.85,
-        cov_isi_th: float = 0.5,
-        dr_th: float = 5.0,
+        cov_isi_th: float = 0.4,
+        cov_amp_th: float = 0.3,
+        min_dr: float = 5.0,
+        max_dr: float = 50.0,
         device: torch.device | str = "cpu",
         seed: int | None = None,
         whiten_alg: str = "zca",
-        whiten_kw: dict | None = None,
         bin_alg: str = "kmeans",
+        **kwargs,
     ):
         assert (isinstance(n_mu_target, int) and n_mu_target > 0) or (
             isinstance(n_mu_target, str) and n_mu_target == "same_ext"
@@ -161,9 +171,9 @@ class ConvBSS:
             "zca": ZCAWhitening,
             "pca": PCAWhitening,
         }
-        whiten_kw = {} if whiten_kw is None else whiten_kw
-        whiten_kw["device"] = self._device
-        self._whiten_model: WhiteningModel = whiten_dict[whiten_alg](**whiten_kw)
+        self._whiten_model: WhiteningModel = whiten_dict[whiten_alg](
+            **kwargs, device=self._device
+        )
 
         # Map "same_ext" -> 0
         self._n_mu_target = 0 if n_mu_target == "same_ext" else n_mu_target
@@ -188,7 +198,9 @@ class ConvBSS:
         self._max_iter = max_iter
         self._sil_th = sil_th
         self._cov_isi_th = cov_isi_th
-        self._dr_th = dr_th
+        self._cov_amp_th = cov_amp_th
+        self._min_dr = min_dr
+        self._max_dr = max_dr
         self._prng = np.random.default_rng(seed)
 
         if seed is not None:
@@ -370,7 +382,7 @@ class ConvBSS:
             sil_scores_tmp.append(sil)
 
         # 4. Post-processing
-        # 4.1. SIL, CoV-ISI and DR thresholding
+        # 4.1. SIL, CoV-ISI, CoV-Amp, and DR thresholding
         idx_to_keep = list(range(self._n_mu))
         for i in range(self._n_mu, self._n_mu_target):
             # Check SIL
@@ -390,17 +402,35 @@ class ConvBSS:
                 )
                 continue
 
+            # Check CoV-Amp
+            cov_amp = spike_stats.cov_amp(
+                ics[i, (spikes_t_tmp[i] * self._fs).astype(np.int64)].cpu().numpy()
+            )
+            if np.isnan(cov_amp) or cov_amp >= self._cov_amp_th:
+                logging.info(
+                    f"{i}-th IC: CoV-Amp above threshold (CoV-Amp = {cov_amp:.2%} >= {self._cov_amp_th:.2%})"
+                    f" -> skipped."
+                )
+                continue
+
             # Check discharge rate
             avg_dr = spike_stats.instantaneous_discharge_rate(spikes_t_tmp[i]).mean()
-            if avg_dr <= self._dr_th:
+            if avg_dr <= self._min_dr:
                 logging.info(
-                    f"{i}-th IC: discharge rate below threshold (DR = {avg_dr:.3f} <= {self._dr_th:.3f})"
+                    f"{i}-th IC: discharge rate below threshold (DR = {avg_dr:.3f} <= {self._min_dr:.3f})"
+                    f" -> skipped."
+                )
+                continue
+            if avg_dr >= self._max_dr:
+                logging.info(
+                    f"{i}-th IC: discharge rate above threshold (DR = {avg_dr:.3f} >= {self._max_dr:.3f})"
                     f" -> skipped."
                 )
                 continue
 
             logging.info(
-                f"{i}-th IC: SIL = {sil:.3f}, CoV-ISI = {cov_isi:.2%} -> accepted."
+                f"{i}-th IC: SIL = {sil:.3f}, CoV-ISI = {cov_isi:.2%}, "
+                f"CoV-Amp = {cov_amp:.2%}, DR = {avg_dr:.3f} -> accepted."
             )
             idx_to_keep.append(i)
         # Keep only valid entries
@@ -420,7 +450,7 @@ class ConvBSS:
         logging.info("Looking for delayed replicas...")
         ics_bin = utils.sparse_to_dense(spikes_t, n_samp / self._fs, self._fs)
         duplicate_mus = utils.find_replicas(
-            ics_bin, fs=self._fs, tol_ms=0.5, min_perc=0.3
+            ics_bin, fs=self._fs, tol_ms=1, min_perc=0.3
         )
         idx_to_keep = list(range(len(spikes_t)))
         for main_mu, dup_mus in duplicate_mus.items():

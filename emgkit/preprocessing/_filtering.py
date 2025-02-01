@@ -25,7 +25,7 @@ from scipy import signal
 from .._base import Signal, signal_to_array
 
 
-def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarray:
+def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndarray:
     """
     Apply a Butterworth lowpass filter on the given signal.
 
@@ -37,7 +37,7 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarr
         Higher bound for frequency band.
     fs : float
         Sampling frequency.
-    order : int, default=2
+    order : int, default=4
         Order of the Butterworth filter.
 
     Returns
@@ -52,7 +52,7 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarr
     return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
-def highpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndarray:
+def highpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndarray:
     """
     Apply a Butterworth highpass filter on the given signal.
 
@@ -64,7 +64,7 @@ def highpass_filter(x: Signal, cut: float, fs: float, order: int = 2) -> np.ndar
         Lower bound for frequency band.
     fs : float
         Sampling frequency.
-    order : int, default=2
+    order : int, default=4
         Order of the Butterworth filter.
 
     Returns
@@ -84,7 +84,7 @@ def bandpass_filter(
     low_cut: float,
     high_cut: float,
     fs: float,
-    order: int = 2,
+    order: int = 4,
 ) -> np.ndarray:
     """
     Apply a Butterworth bandpass filter on the given signal.
@@ -99,7 +99,7 @@ def bandpass_filter(
         Higher bound for frequency band.
     fs : float
         Sampling frequency.
-    order : int, default=2
+    order : int, default=4
         Order of the Butterworth filter.
 
     Returns
@@ -121,7 +121,7 @@ def bandstop_filter(
     low_cut: float,
     high_cut: float,
     fs: float,
-    order: int = 2,
+    order: int = 4,
 ) -> np.ndarray:
     """
     Apply a Butterworth bandstop filter on the given signal.
@@ -136,7 +136,7 @@ def bandstop_filter(
         Higher bound for frequency band.
     fs : float
         Sampling frequency.
-    order : int, default=2
+    order : int, default=4
         Order of the Butterworth filter.
 
     Returns
@@ -151,3 +151,35 @@ def bandstop_filter(
         order, (low_cut, high_cut), btype="bandstop", output="sos", fs=fs
     )
     return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
+
+
+def notch_filter(
+    x: Signal,
+    freq: float,
+    fs: float,
+    q: int = 30,
+) -> np.ndarray:
+    """
+    Apply an IIR notch filter on the given signal.
+
+    Parameters
+    ----------
+    x : Signal
+        A signal with shape (n_samples, n_channels).
+    freq : float
+        Frequency to attenuate.
+    fs : float
+        Sampling frequency.
+    q : int, default=30
+        Quality factor of the filter.
+
+    Returns
+    -------
+    ndarray
+        Filtered signal with shape (n_samples, n_channels).
+    """
+    # Convert input to array
+    x_array = signal_to_array(x)
+    # Create and apply filter
+    b, a = signal.iirnotch(freq, q, fs)
+    return signal.filtfilt(b, a, x_array, axis=0).astype(x_array.dtype)

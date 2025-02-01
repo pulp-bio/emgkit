@@ -294,6 +294,7 @@ def plot_waveforms(
     wfs: np.ndarray,
     fs: float,
     n_cols: int = 10,
+    title: str = "MUAP waveforms",
     y_label: str = "Amplitude [a.u.]",
     fig_size: tuple[int, int] | None = None,
     file_name: str | None = None,
@@ -309,6 +310,8 @@ def plot_waveforms(
         Sampling frequency of the signal.
     n_cols : int, default=10
         Number of columns for subplots.
+    title : str, default="MUAP waveforms"
+        Title of the figure.
     y_label : str, default="Amplitude [a.u.]"
         Label for Y axis.
     fig_size : tuple of (int, int) or None, default=None
@@ -317,10 +320,7 @@ def plot_waveforms(
         Name of the file where the image will be saved to.
     """
     n_ch = wfs.shape[0]
-    assert (
-        n_ch % n_cols == 0
-    ), "The number of channels must be divisible for the number of columns."
-    n_rows = n_ch // n_cols
+    n_rows = int(round(n_ch / n_cols))
     t = np.arange(wfs.shape[2]) * 1000 / fs
 
     f, axes = plt.subplots(
@@ -336,10 +336,12 @@ def plot_waveforms(
     for i in range(n_rows):
         for j in range(n_cols):
             idx = i * n_cols + j
+            if idx == n_ch:
+                break
             axes[i, j].set_title(f"Ch{idx}")
             axes[i, j].plot(t, wfs[idx].T)
 
-    f.suptitle("MUAP waveforms")
+    f.suptitle(title)
     f.supxlabel("Time [ms]")
     f.supylabel(y_label)
 

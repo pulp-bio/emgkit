@@ -205,7 +205,8 @@ class PCAWhitening(WhiteningModel):
         self._vt = self._vt[: self._n_pcs]
 
         # Whitening data
-        d_mtx = torch.diag(1.0 / self._s) * sqrt(self._n_samp_seen - 1)
+        eps = 1e-8
+        d_mtx = torch.diag(1.0 / (self._s + eps)) * sqrt(self._n_samp_seen - 1)
         self._white_mtx = d_mtx @ self._u.T
         if self._keep_dim:  # re-project to original dimensionality
             self._white_mtx = self._u @ self._white_mtx

@@ -98,6 +98,7 @@ def cov_isi(spikes_t: np.ndarray) -> float:
     """
     # Compute ISI
     isi = np.diff(spikes_t)
+    isi = isi[isi < 0.25]  # discard ISI larger than 250 ms
 
     res = np.nan
     if isi.size > 1:

@@ -25,6 +25,7 @@ from ._filtering import (
     bandstop_filter,
     highpass_filter,
     lowpass_filter,
+    notch_filter,
 )
 from ._pca_whitening import PCAWhitening
 from ._zca_whitening import ZCAWhitening
@@ -36,6 +37,7 @@ __all__ = [
     "bandstop_filter",
     "highpass_filter",
     "lowpass_filter",
+    "notch_filter",
     "PCAWhitening",
     "ZCAWhitening",
 ]

@@ -155,7 +155,8 @@ class ZCAWhitening(WhiteningModel):
         self._u *= torch.sign(self._u[0])  # guarantee consistent sign
 
         # Whiten data
-        d_mtx = torch.diag(1.0 / self._s) * sqrt(self._n_samp_seen - 1)
+        eps = 1e-8
+        d_mtx = torch.diag(1.0 / (self._s + eps)) * sqrt(self._n_samp_seen - 1)
         self._white_mtx = self._u @ d_mtx @ self._u.T
         x_w = self._white_mtx @ x_tensor
 
