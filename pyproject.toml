@@ -1,3 +1,16 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "emgkit"
+version = "1.0.0"
+description = "A toolkit for the analysis and processing of EMG signals"
+readme = "README.md"
+authors = [
+    { name = "Mattia Orlandi", email = "mattia.orlandi@unibo.it"}
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["main_pkg*"]
