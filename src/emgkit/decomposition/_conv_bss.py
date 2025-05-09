@@ -63,6 +63,8 @@ class ConvBSS:
         Minimum silhouette threshold for considering a MU as valid.
     cov_isi_th : float, default=0.4
         Maximum CoV-ISI for considering a MU as valid.
+    cov_isi_rest: bool, default=False
+        Whether rest periods are admitted during CoV-ISI calculation.
     cov_amp_th : float, default=0.3
         Maximum CoV-Amp for considering a MU as valid.
     min_dr : float, default=5.0
@@ -96,6 +98,8 @@ class ConvBSS:
         Minimum silhouette threshold for considering a MU as valid.
     _cov_isi_th : float
         Maximum CoV-ISI for considering a MU as valid.
+    cov_isi_rest: bool
+        Whether rest periods are admitted during CoV-ISI calculation.
     cov_amp_th : float
         Maximum CoV-Amp for considering a MU as valid.
     _min_dr : float
@@ -126,6 +130,7 @@ class ConvBSS:
         max_iter: int = 100,
         sil_th: float = 0.85,
         cov_isi_th: float = 0.4,
+        cov_isi_rest: bool = False,
         cov_amp_th: float = 0.3,
         min_dr: float = 5.0,
         max_dr: float = 50.0,
@@ -178,7 +183,7 @@ class ConvBSS:
         # Map "same_ext" -> 0
         self._n_mu_target = 0 if n_mu_target == "same_ext" else n_mu_target
 
-        # Map "same_n_mu" -> 0, "auto" -> -1 and "none" -> 1
+        # Map "same_n_mu" -> 0 and "auto" -> -1
         if f_ext == "same_n_mu":
             self._f_ext = 0
         elif f_ext == "auto":
@@ -198,6 +203,7 @@ class ConvBSS:
         self._max_iter = max_iter
         self._sil_th = sil_th
         self._cov_isi_th = cov_isi_th
+        self._cov_isi_rest = cov_isi_rest
         self._cov_amp_th = cov_amp_th
         self._min_dr = min_dr
         self._max_dr = max_dr
@@ -394,7 +400,7 @@ class ConvBSS:
                 continue
 
             # Check CoV-ISI
-            cov_isi = spike_stats.cov_isi(spikes_t_tmp[i])
+            cov_isi = spike_stats.cov_isi(spikes_t_tmp[i], self._cov_isi_rest)
             if np.isnan(cov_isi) or cov_isi >= self._cov_isi_th:
                 logging.info(
                     f"{i}-th IC: CoV-ISI above threshold (CoV-ISI = {cov_isi:.2%} >= {self._cov_isi_th:.2%})"
@@ -585,7 +591,7 @@ class ConvBSS:
             compute_sil=True,
             seed=self._prng,
         )
-        cov_isi = spike_stats.cov_isi(spikes / self._fs)
+        cov_isi = spike_stats.cov_isi(spikes / self._fs, self._cov_isi_rest)
         iter_idx = 0
         if math.isnan(cov_isi):
             logging.info("Spike detection failed.")
@@ -603,7 +609,7 @@ class ConvBSS:
                 compute_sil=True,
                 seed=self._prng,
             )
-            cov_isi_new = spike_stats.cov_isi(spikes_new / self._fs)
+            cov_isi_new = spike_stats.cov_isi(spikes_new / self._fs, self._cov_isi_rest)
             iter_idx += 1
 
             if math.isnan(cov_isi_new):

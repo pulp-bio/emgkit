@@ -414,6 +414,11 @@ def compute_waveforms(
             spikes_mu = spikes_mu[
                 (spikes_mu >= wf_len) & (spikes_mu <= n_samp - wf_len)
             ]
+            # Check if there are no spikes
+            if spikes_mu.size == 0:
+                wfs[ch, mu] = np.nan * np.ones(wf_len, dtype=emg_array.dtype)
+                continue
+
             cur_wf = np.zeros(shape=(spikes_mu.size, wf_len), dtype=emg_array.dtype)
             for k, s in enumerate(spikes_mu):
                 cur_wf[k] = emg_ch[s - wf_radius : s + wf_radius + 1]

@@ -82,7 +82,7 @@ def smoothed_discharge_rate(
     return pd.Series(dr, index=np.arange(dr.size) / fs)
 
 
-def cov_isi(spikes_t: np.ndarray) -> float:
+def cov_isi(spikes_t: np.ndarray, rest: bool) -> float:
     """
     Compute the Coefficient of Variation of the Inter-Spike Interval (CoV-ISI) of the given spike train.
 
@@ -90,6 +90,8 @@ def cov_isi(spikes_t: np.ndarray) -> float:
     ----------
     spikes_t : ndarray
         Array containing the time of spikes (in seconds).
+    rest : bool
+        Whether rest periods are admitted during CoV-ISI calculation.
 
     Returns
     -------
@@ -98,7 +100,8 @@ def cov_isi(spikes_t: np.ndarray) -> float:
     """
     # Compute ISI
     isi = np.diff(spikes_t)
-    isi = isi[isi < 0.25]  # discard ISI larger than 250 ms
+    if rest:
+        isi = isi[isi < 0.25]  # discard ISI larger than 250 ms
 
     res = np.nan
     if isi.size > 1:
