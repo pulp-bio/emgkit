@@ -27,6 +27,8 @@ from ._filtering import (
     lowpass_filter,
     notch_filter,
 )
+from ._incremental_pca_whitening import IncPCAWhitening
+from ._incremental_zca_whitening import IncZCAWhitening
 from ._pca_whitening import PCAWhitening
 from ._zca_whitening import ZCAWhitening
 
@@ -38,6 +40,8 @@ __all__ = [
     "highpass_filter",
     "lowpass_filter",
     "notch_filter",
+    "IncPCAWhitening",
+    "IncZCAWhitening",
     "PCAWhitening",
     "ZCAWhitening",
 ]

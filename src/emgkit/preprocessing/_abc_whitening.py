@@ -47,8 +47,7 @@ class WhiteningModel(ABC):
     @abstractmethod
     def whiten_training(self, x: Signal) -> torch.Tensor:
         """
-        Train the whitening model to whiten the given signal. If called multiple times,
-        the model updates its internal parameters without forgetting the previous history.
+        Train the whitening model to whiten the given signal.
 
         Parameters
         ----------

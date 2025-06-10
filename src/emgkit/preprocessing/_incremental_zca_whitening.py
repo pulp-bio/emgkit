@@ -1,5 +1,5 @@
 """
-Class implementing the ZCA whitening algorithm.
+Class implementing the incremental ZCA whitening algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -19,15 +19,17 @@ limitations under the License.
 
 from __future__ import annotations
 
+from math import sqrt
+
 import torch
 
 from .._base import Signal, signal_to_tensor
 from ._abc_whitening import WhiteningModel
 
 
-class ZCAWhitening(WhiteningModel):
+class IncZCAWhitening(WhiteningModel):
     """
-    Class implementing ZCA whitening.
+    Class implementing incremental ZCA whitening.
 
     Parameters
     ----------
@@ -38,10 +40,23 @@ class ZCAWhitening(WhiteningModel):
     ----------
     _device : device
         Torch device.
+    _n_samp_seen : int
+        Number of samples seen.
+    _u : Tensor or None
+        Left-singular vectors.
+    _s : Tensor or None
+        Singular values.
+    _vt : Tensor or None
+        Right-singular vectors.
     """
 
     def __init__(self, device: torch.device | str = "cpu") -> None:
         self._device = torch.device(device) if isinstance(device, str) else device
+        self._n_samp_seen = 0
+
+        self._u: torch.Tensor | None = None
+        self._s: torch.Tensor | None = None
+        self._vt: torch.Tensor | None = None
 
         self._mean_vec: torch.Tensor | None = None
         self._white_mtx: torch.Tensor | None = None
@@ -121,24 +136,69 @@ class ZCAWhitening(WhiteningModel):
         x_tensor = signal_to_tensor(x, self._device).T
         n_samp = x_tensor.size(1)
 
-        # Compute mean vector and center data
-        self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
-        x_tensor -= self._mean_vec
+        if (
+            self._mean_vec is None
+            or self._cov_mtx is None
+            or self._u is None
+            or self._s is None
+            or self._vt is None
+        ):  # first pass
+            # Compute mean vector and center data
+            self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
+            x_tensor -= self._mean_vec
 
-        # Compute covariance matrix
-        self._cov_mtx = x_tensor @ x_tensor.T / n_samp
+            # Compute covariance matrix
+            self._cov_mtx = x_tensor @ x_tensor.T / n_samp
+
+            x_tensor_tmp = x_tensor
+        else:
+            # Compute weights for update
+            n_samp_tot = self._n_samp_seen + n_samp
+            w1 = self._n_samp_seen / n_samp_tot
+            w2 = n_samp / n_samp_tot
+
+            # Compute mean vector and center data
+            mean_vec_new = x_tensor.mean(dim=1, keepdim=True)
+            x_tensor -= mean_vec_new
+            self._mean_vec = w1 * self._mean_vec + w2 * mean_vec_new
+
+            # Compute covariance matrix
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+            self._cov_mtx = w1 * self._cov_mtx + w2 * cov_mtx
+
+            # Compute mean correction
+            mean_corr = sqrt(self._n_samp_seen * n_samp / n_samp_tot) * (
+                self._mean_vec - mean_vec_new
+            )
+
+            # Compute new tensor
+            x_tensor_tmp = torch.cat(
+                (
+                    x_tensor,  # new data
+                    self._s * self._u @ self._vt,  # old data
+                    mean_corr,
+                ),
+                dim=1,
+            )
+
+        # Update number of samples
+        self._n_samp_seen += n_samp
 
         # SVD:
         # - the left-singular vectors of X are the eigenvectors of X @ X.T
         # - the singular values of X are the square root of the eigenvalues of X @ X.T
         # - the right-singular vectors of X are the eigenvectors of X.T @ X
-        u, s, _ = torch.linalg.svd(x_tensor, full_matrices=False)
+        u, s, vt = torch.linalg.svd(x_tensor_tmp, full_matrices=False)
         u *= torch.sign(u[0])  # guarantee consistent sign
 
         # Compute whitening matrix
         eps = 1e-8
-        d_mtx = torch.diag(1.0 / (s + eps))
+        d_mtx = torch.diag(1.0 / (s + eps)) * sqrt(self._n_samp_seen - 1)
         white_mtx = u @ d_mtx @ u.T
+        x_w = white_mtx @ x_tensor
+        self._u = u
+        self._s = s
+        self._vt = vt
         self._white_mtx = white_mtx
 
         # Whiten data

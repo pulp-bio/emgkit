@@ -1,5 +1,5 @@
 """
-Class implementing the ZCA whitening algorithm.
+Class implementing the incremental PCA whitening algorithm.
 
 
 Copyright 2023 Mattia Orlandi
@@ -19,29 +19,73 @@ limitations under the License.
 
 from __future__ import annotations
 
+import logging
+from math import sqrt
+
 import torch
 
 from .._base import Signal, signal_to_tensor
 from ._abc_whitening import WhiteningModel
 
 
-class ZCAWhitening(WhiteningModel):
+class IncPCAWhitening(WhiteningModel):
     """
-    Class implementing ZCA whitening.
+    Class implementing incremental PCA whitening.
 
     Parameters
     ----------
+    n_pcs : int or str, default="auto"
+        Number of components to be selected:
+        - if set to the string "auto", it will be chosen automatically based on the average of the smallest
+        half of eigenvalues/singular values;
+        - if set to the string "all", all components will be retained;
+        - otherwise, it will be set to the given number.
+    keep_dim : bool, default=False
+        Whether to re-project the low-dimensional whitened data to the original dimensionality.
     device : device or str, default="cpu"
         Torch device.
 
     Attributes
     ----------
+    _keep_dim : bool
+        Whether to re-project the low-dimensional whitened data to the original dimensionality.
     _device : device
         Torch device.
+    _n_samp_seen : int
+        Number of samples seen.
+    _u : Tensor or None
+        Left-singular vectors.
+    _s : Tensor or None
+        Singular values.
+    _vt : Tensor or None
+        Right-singular vectors.
     """
 
-    def __init__(self, device: torch.device | str = "cpu") -> None:
+    def __init__(
+        self,
+        n_pcs: int | str = "auto",
+        keep_dim: bool = False,
+        device: torch.device | str = "cpu",
+    ) -> None:
+        assert (isinstance(n_pcs, int) and n_pcs > 0) or (
+            isinstance(n_pcs, str) and n_pcs in ("auto", "all")
+        ), 'n_pcs must be either a positive integer, "auto" or "all".'
+
+        # Map "auto" -> -1 and "all" -> 0
+        if n_pcs == "auto":
+            self._n_pcs = -1
+        elif n_pcs == "all":
+            self._n_pcs = 0
+        else:
+            self._n_pcs = n_pcs
+
+        self._keep_dim = keep_dim
         self._device = torch.device(device) if isinstance(device, str) else device
+        self._n_samp_seen = 0
+
+        self._u: torch.Tensor | None = None
+        self._s: torch.Tensor | None = None
+        self._vt: torch.Tensor | None = None
 
         self._mean_vec: torch.Tensor | None = None
         self._white_mtx: torch.Tensor | None = None
@@ -95,6 +139,11 @@ class ZCAWhitening(WhiteningModel):
             )
         return self._cov_mtx
 
+    @property
+    def n_pcs(self) -> int:
+        """int: Property for getting the number of principal components."""
+        return self._n_pcs
+
     def whiten_training(self, x: Signal) -> torch.Tensor:
         """
         Train the whitening model to whiten the given signal. If called multiple times,
@@ -119,26 +168,89 @@ class ZCAWhitening(WhiteningModel):
         """
         # Convert input to Tensor
         x_tensor = signal_to_tensor(x, self._device).T
-        n_samp = x_tensor.size(1)
+        n_ch, n_samp = x_tensor.size()
 
-        # Compute mean vector and center data
-        self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
-        x_tensor -= self._mean_vec
+        if (
+            self._mean_vec is None
+            or self._cov_mtx is None
+            or self._u is None
+            or self._s is None
+            or self._vt is None
+        ):  # first pass
+            # Compute mean vector and center data
+            self._mean_vec = x_tensor.mean(dim=1, keepdim=True)
+            x_tensor -= self._mean_vec
 
-        # Compute covariance matrix
-        self._cov_mtx = x_tensor @ x_tensor.T / n_samp
+            # Compute covariance matrix
+            self._cov_mtx = x_tensor @ x_tensor.T / n_samp
+
+            x_tensor_tmp = x_tensor
+        else:
+            # Compute weights for update
+            n_samp_tot = self._n_samp_seen + n_samp
+            w1 = self._n_samp_seen / n_samp_tot
+            w2 = n_samp / n_samp_tot
+
+            # Compute mean vector and center data
+            mean_vec_new = x_tensor.mean(dim=1, keepdim=True)
+            x_tensor -= mean_vec_new
+            self._mean_vec = w1 * self._mean_vec + w2 * mean_vec_new
+
+            # Compute covariance matrix
+            cov_mtx = x_tensor @ x_tensor.T / n_samp
+            self._cov_mtx = w1 * self._cov_mtx + w2 * cov_mtx
+
+            # Compute mean correction
+            mean_corr = sqrt(self._n_samp_seen * n_samp / n_samp_tot) * (
+                self._mean_vec - mean_vec_new
+            )
+
+            # Compute new tensor
+            x_tensor_tmp = torch.cat(
+                (
+                    x_tensor,  # new data
+                    self._s * self._u @ self._vt,  # old data
+                    mean_corr,
+                ),
+                dim=1,
+            )
+
+        # Update number of samples
+        self._n_samp_seen += n_samp
 
         # SVD:
         # - the left-singular vectors of X are the eigenvectors of X @ X.T
         # - the singular values of X are the square root of the eigenvalues of X @ X.T
         # - the right-singular vectors of X are the eigenvectors of X.T @ X
-        u, s, _ = torch.linalg.svd(x_tensor, full_matrices=False)
+        u, s, vt = torch.linalg.svd(x_tensor_tmp, full_matrices=False)
         u *= torch.sign(u[0])  # guarantee consistent sign
+
+        # Select number of components to retain
+        if self._n_pcs < 0:  # automatic selection
+            rank_th = s[s.size(0) // 2 :].mean()
+            self._n_pcs = int(torch.sum(torch.ge(s, rank_th)).item())
+        elif self._n_pcs == 0:
+            self._n_pcs = n_ch
+        assert (
+            n_ch >= self._n_pcs
+        ), f"Too few channels ({n_ch}) with respect to target components ({self._n_pcs})."
+
+        # Reduce dimensionality
+        logging.info(f"Reducing dimension of data from {n_ch} to {self._n_pcs}.")
+        u = u[:, : self._n_pcs]
+        s = s[: self._n_pcs]
+        vt = vt[: self._n_pcs]
 
         # Compute whitening matrix
         eps = 1e-8
-        d_mtx = torch.diag(1.0 / (s + eps))
-        white_mtx = u @ d_mtx @ u.T
+        d_mtx = torch.diag(1.0 / (s + eps)) * sqrt(self._n_samp_seen - 1)
+        white_mtx = d_mtx @ u.T
+        if self._keep_dim:  # re-project to original dimensionality
+            white_mtx = u @ white_mtx
+            logging.info(f"Re-projecting dimensionality to {white_mtx.size(0)}.")
+        self._u = u
+        self._s = s
+        self._vt = vt
         self._white_mtx = white_mtx
 
         # Whiten data
