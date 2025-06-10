@@ -58,13 +58,13 @@ class ConvBSS:
         Threshold for convergence.
     max_iter : int, default=200
         Maximum n. of iterations.
-    sil_th : float, default=0.85
+    sil_th : float, default=0.6
         Minimum silhouette threshold for considering a MU as valid.
-    cov_isi_th : float, default=0.4
+    cov_isi_th : float, default=1.0
         Maximum CoV-ISI for considering a MU as valid.
     cov_isi_rest: bool, default=False
         Whether rest periods are admitted during CoV-ISI calculation.
-    cov_amp_th : float, default=0.3
+    cov_amp_th : float, default=1.0
         Maximum CoV-Amp for considering a MU as valid.
     min_dr : float, default=5.0
         Minimum discharge rate (in spikes/s) for considering a MU as valid.
@@ -127,10 +127,10 @@ class ConvBSS:
         g_name: str = "logcosh",
         conv_th: float = 1e-4,
         max_iter: int = 100,
-        sil_th: float = 0.85,
-        cov_isi_th: float = 0.4,
+        sil_th: float = 0.6,
+        cov_isi_th: float = 1.0,
         cov_isi_rest: bool = False,
-        cov_amp_th: float = 0.3,
+        cov_amp_th: float = 1.0,
         min_dr: float = 5.0,
         max_dr: float = 50.0,
         device: torch.device | str = "cpu",
