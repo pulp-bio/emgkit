@@ -1,6 +1,6 @@
 """
-Class implementing the convolutive blind source separation algorithm
-for EMG decomposition (https://doi.org/10.1088/1741-2560/13/2/026027).
+Class implementing a variant of convolutive blind source separation algorithm
+for EMG decomposition (https://doi.org/10.1088/1741-2560/13/2/026027) with incremental learning.
 
 
 Copyright 2023 Mattia Orlandi
@@ -34,9 +34,9 @@ from .._base import Signal, signal_to_array
 from . import _contrast_functions as cf
 
 
-class ConvBSS:
+class IncConvBSS:
     """
-    Decompose EMG signals via convolutive blind source separation.
+    Decompose EMG signals incrementally via convolutive blind source separation.
 
     Parameters
     ----------
@@ -168,8 +168,8 @@ class ConvBSS:
 
         # Whitening model
         whiten_dict = {
-            "zca": preprocessing.ZCAWhitening,
-            "pca": preprocessing.PCAWhitening,
+            "zca": preprocessing.IncZCAWhitening,
+            "pca": preprocessing.IncPCAWhitening,
         }
         self._whiten_model: preprocessing.WhiteningModel = whiten_dict[whiten_alg](
             **kwargs, device=self._device
@@ -274,7 +274,7 @@ class ConvBSS:
             pickle.dump(self, f)
 
     @classmethod
-    def load_from_file(cls, filename: str) -> ConvBSS:
+    def load_from_file(cls, filename: str) -> IncConvBSS:
         """
         Load instance from a .pkl file using pickle.
 
@@ -360,6 +360,25 @@ class ConvBSS:
         )
         spikes_t_tmp = []
         sil_scores_tmp = []
+        if self._sep_mtx is not None and self._spike_ths is not None:
+            # If already trained, keep previous MU parameters
+            sep_mtx[: self._n_mu] = self._sep_mtx
+            spike_ths[: self._n_mu] = self._spike_ths
+            ics[: self._n_mu] = (
+                (self._sep_mtx @ emg_white) ** 2
+                if self._square_ics
+                else self._sep_mtx @ emg_white
+            )
+
+            for i in range(self._n_mu):
+                spikes_i = utils.detect_spikes(
+                    ics[i],
+                    ref_period=self._ref_period,
+                    threshold=self._spike_ths[i].item(),
+                    prng=self._prng,
+                )[0]
+                spikes_t_tmp.append(spikes_i / self._fs)
+                sil_scores_tmp.append(np.inf)
 
         # 3.2. Run ICA loop
         w_init = self._initialize_weights(emg_white)

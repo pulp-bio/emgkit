@@ -18,6 +18,7 @@ limitations under the License.
 """
 
 from ._conv_bss import ConvBSS
+from ._incremental_conv_bss import IncConvBSS
 from ._mu_tracker import MUTracker
 
-__all__ = ["ConvBSS", "MUTracker"]
+__all__ = ["ConvBSS", "IncConvBSS", "MUTracker"]

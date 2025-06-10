@@ -262,49 +262,12 @@ def find_replicas(
     return duplicate_tr
 
 
-def _find_threshold(peaks: np.ndarray, th_init: float) -> float:
-    """Find optimal spike/noise threshold iteratively."""
-    max_iter = 10
-    conv_th = 1e-4
-    prev_th = new_th = th_init
-    for i in range(max_iter):
-        th_h = peaks[peaks >= prev_th].mean()
-        th_l = peaks[peaks < prev_th].mean()
-        new_th = (th_h + th_l) / 2
-
-        if abs(new_th - prev_th) < conv_th:
-            break
-
-        prev_th = new_th
-
-    return new_th
-
-
-def _otsu_score(x: np.ndarray, th: float) -> float:
-    """Compute Otsu's score given an array and a threshold."""
-    x_bin = np.zeros_like(x)
-    x_bin[x >= th] = 1
-    n_tot = x.size
-    n_bin = np.count_nonzero(x_bin)
-    w1 = n_bin / n_tot
-    w0 = 1 - w1
-    if w1 == 0 or w0 == 0:
-        return np.inf
-
-    x0 = x[x_bin == 0]
-    x1 = x[x_bin == 1]
-    var0 = np.var(x0).item()
-    var1 = np.var(x1).item()
-    return w0 * var0 + w1 * var1
-
-
 def detect_spikes(
     ic: Signal,
     ref_period: int | None = None,
-    bin_alg: str = "kmeans",
     threshold: float | None = None,
     compute_sil: bool = False,
-    seed: int | np.random.Generator | None = None,
+    prng: np.random.Generator | None = None,
 ) -> tuple[np.ndarray, float, float]:
     """
     Detect spikes in the given IC.
@@ -315,14 +278,12 @@ def detect_spikes(
         Estimated IC with shape (n_samples,).
     ref_period : int or None, default=None
         Refractory period for spike detection.
-    bin_alg : {"kmeans", "otsu"}, default="kmeans"
-        Binarization algorithm.
     threshold : float or None, default=None
         Threshold for spike/noise classification.
     compute_sil : bool, default=False
         Whether to compute SIL measure or not.
-    seed : int or Generator or None, default=None
-        Seed for PRNG.
+    prng : Generator or None, default=None
+        PRNG.
 
     Returns
     -------
@@ -333,11 +294,6 @@ def detect_spikes(
     float
         SIL measure.
     """
-    assert bin_alg in (
-        "kmeans",
-        "otsu",
-    ), f'The binarization algorithm can be either "kmeans" or "otsu": the provided one was {bin_alg}.'
-
     # Convert to array
     ic_array = signal_to_array(
         ic, allow_1d=True
@@ -347,21 +303,10 @@ def detect_spikes(
     ic_peaks = ic_array[peaks]
 
     if threshold is None:
-        if bin_alg == "kmeans":
-            centroids, labels = kmeans2(
-                ic_peaks.reshape(-1, 1), k=2, minit="++", seed=seed
-            )
-            high_cluster_idx = np.argmax(centroids)  # consider only high peaks
-            spikes = peaks[labels == high_cluster_idx]
-            threshold_new = centroids.mean()
-        else:
-            th_range = np.linspace(0, ic_peaks.max())
-            otsu_scores = np.asarray([_otsu_score(ic_peaks, th) for th in th_range])
-            threshold_new = _find_threshold(
-                ic_peaks, th_init=th_range[np.argmin(otsu_scores)].item()
-            )
-            labels = ic_peaks >= threshold_new
-            spikes = peaks[labels]
+        centroids, labels = kmeans2(ic_peaks.reshape(-1, 1), k=2, minit="++", rng=prng)
+        high_cluster_idx = np.argmax(centroids)  # consider only high peaks
+        spikes = peaks[labels == high_cluster_idx]
+        threshold_new = centroids.mean()
     else:
         threshold_new = threshold
         labels = ic_peaks >= threshold_new
