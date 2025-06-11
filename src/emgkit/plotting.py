@@ -174,7 +174,7 @@ def _plot_signal_heatmap(
         axes[0, 0].scatter(
             x=np.arange(labels.size),
             y=np.zeros(shape=labels.size, dtype="uint8"),
-            c=labels.map(color_dict),
+            c=labels.map(color_dict),  # type: ignore
             marker=".",
         )
         axes[0, 0].set_xbound(0, labels.size)
