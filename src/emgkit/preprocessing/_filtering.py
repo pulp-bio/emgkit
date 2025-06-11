@@ -25,7 +25,9 @@ from scipy import signal
 from .._base import Signal, signal_to_array
 
 
-def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndarray:
+def lowpass_filter(
+    x: Signal, cut: float, fs: float, order: int = 4, forward_only: bool = False
+) -> np.ndarray:
     """
     Apply a Butterworth lowpass filter on the given signal.
 
@@ -39,6 +41,8 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndarr
         Sampling frequency.
     order : int, default=4
         Order of the Butterworth filter.
+    forward_only : bool, default=False
+        Whether to filter only on the forward direction, or also backward.
 
     Returns
     -------
@@ -49,10 +53,17 @@ def lowpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndarr
     x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, cut, btype="lowpass", output="sos", fs=fs)
+    if forward_only:
+        emg_flt = signal.sosfilt(sos, x_array, axis=0)
+        if isinstance(emg_flt, tuple):
+            return emg_flt[0].astype(x_array.dtype)
+        return emg_flt.astype(x_array.dtype)
     return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
-def highpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndarray:
+def highpass_filter(
+    x: Signal, cut: float, fs: float, order: int = 4, forward_only: bool = False
+) -> np.ndarray:
     """
     Apply a Butterworth highpass filter on the given signal.
 
@@ -66,6 +77,8 @@ def highpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndar
         Sampling frequency.
     order : int, default=4
         Order of the Butterworth filter.
+    forward_only : bool, default=False
+        Whether to filter only on the forward direction, or also backward.
 
     Returns
     -------
@@ -76,6 +89,11 @@ def highpass_filter(x: Signal, cut: float, fs: float, order: int = 4) -> np.ndar
     x_array = signal_to_array(x)
     # Create and apply filter
     sos = signal.butter(order, cut, btype="highpass", output="sos", fs=fs)
+    if forward_only:
+        emg_flt = signal.sosfilt(sos, x_array, axis=0)
+        if isinstance(emg_flt, tuple):
+            return emg_flt[0].astype(x_array.dtype)
+        return emg_flt.astype(x_array.dtype)
     return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
@@ -85,6 +103,7 @@ def bandpass_filter(
     high_cut: float,
     fs: float,
     order: int = 4,
+    forward_only: bool = False,
 ) -> np.ndarray:
     """
     Apply a Butterworth bandpass filter on the given signal.
@@ -101,6 +120,8 @@ def bandpass_filter(
         Sampling frequency.
     order : int, default=4
         Order of the Butterworth filter.
+    forward_only : bool, default=False
+        Whether to filter only on the forward direction, or also backward.
 
     Returns
     -------
@@ -113,6 +134,11 @@ def bandpass_filter(
     sos = signal.butter(
         order, (low_cut, high_cut), btype="bandpass", output="sos", fs=fs
     )
+    if forward_only:
+        emg_flt = signal.sosfilt(sos, x_array, axis=0)
+        if isinstance(emg_flt, tuple):
+            return emg_flt[0].astype(x_array.dtype)
+        return emg_flt.astype(x_array.dtype)
     return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
@@ -122,6 +148,7 @@ def bandstop_filter(
     high_cut: float,
     fs: float,
     order: int = 4,
+    forward_only: bool = False,
 ) -> np.ndarray:
     """
     Apply a Butterworth bandstop filter on the given signal.
@@ -138,6 +165,8 @@ def bandstop_filter(
         Sampling frequency.
     order : int, default=4
         Order of the Butterworth filter.
+    forward_only : bool, default=False
+        Whether to filter only on the forward direction, or also backward.
 
     Returns
     -------
@@ -150,14 +179,16 @@ def bandstop_filter(
     sos = signal.butter(
         order, (low_cut, high_cut), btype="bandstop", output="sos", fs=fs
     )
+    if forward_only:
+        emg_flt = signal.sosfilt(sos, x_array, axis=0)
+        if isinstance(emg_flt, tuple):
+            return emg_flt[0].astype(x_array.dtype)
+        return emg_flt.astype(x_array.dtype)
     return signal.sosfiltfilt(sos, x_array, axis=0).astype(x_array.dtype)
 
 
 def notch_filter(
-    x: Signal,
-    freq: float,
-    fs: float,
-    q: int = 30,
+    x: Signal, freq: float, fs: float, q: int = 30, forward_only: bool = False
 ) -> np.ndarray:
     """
     Apply an IIR notch filter on the given signal.
@@ -172,6 +203,8 @@ def notch_filter(
         Sampling frequency.
     q : int, default=30
         Quality factor of the filter.
+    forward_only : bool, default=False
+        Whether to filter only on the forward direction, or also backward.
 
     Returns
     -------
@@ -182,4 +215,9 @@ def notch_filter(
     x_array = signal_to_array(x)
     # Create and apply filter
     b, a = signal.iirnotch(freq, q, fs)
+    if forward_only:
+        emg_flt = signal.lfilter(b, a, x_array, axis=0)
+        if isinstance(emg_flt, tuple):
+            return emg_flt[0].astype(x_array.dtype)
+        return emg_flt.astype(x_array.dtype)
     return signal.filtfilt(b, a, x_array, axis=0).astype(x_array.dtype)
