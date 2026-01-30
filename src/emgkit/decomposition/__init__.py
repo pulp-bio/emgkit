@@ -20,5 +20,6 @@ limitations under the License.
 from ._conv_bss import ConvBSS
 from ._incremental_conv_bss import IncConvBSS
 from ._mu_tracker import MUTracker
+from ._2c_fast_ica import TwoCFastICA
 
-__all__ = ["ConvBSS", "IncConvBSS", "MUTracker"]
+__all__ = ["ConvBSS", "IncConvBSS", "MUTracker", "TwoCFastICA"]
